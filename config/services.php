@@ -36,8 +36,14 @@ return [
     ],
 
     'bling' => [
-        'key' => env('BLING_API_KEY'),
-        'base_url' => env('BLING_BASE_URL', 'https://bling.com.br/Api/v2'),
+        // API v3 (OAuth2)
+        'client_id' => env('BLING_CLIENT_ID'),
+        'client_secret' => env('BLING_CLIENT_SECRET'),
+        'base_url' => env('BLING_BASE_URL', 'https://api.bling.com.br/Api/v3'),
+        'default_warehouse_id' => env('BLING_DEFAULT_WAREHOUSE_ID', 1),
+        
+        // Redirect para OAuth (configure no painel Bling)
+        'redirect_uri' => env('BLING_REDIRECT_URI', env('APP_URL') . '/bling/callback'),
     ],
 
 ];

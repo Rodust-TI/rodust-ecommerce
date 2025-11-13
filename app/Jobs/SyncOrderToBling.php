@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Order;
-use App\Services\BlingService;
+use App\Contracts\ERPInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -25,7 +25,7 @@ class SyncOrderToBling implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(BlingService $bling): void
+    public function handle(ERPInterface $erp): void
     {
         try {
             $orderData = [
@@ -46,18 +46,18 @@ class SyncOrderToBling implements ShouldQueue
                 'discount' => $this->order->discount ?? 0,
             ];
 
-            $blingOrderNumber = $bling->createOrder($orderData);
+            $erpOrderNumber = $erp->createOrder($orderData);
 
-            if ($blingOrderNumber) {
+            if ($erpOrderNumber) {
                 $this->order->update([
-                    'bling_id' => $blingOrderNumber,
+                    'bling_id' => $erpOrderNumber,
                     'bling_synced_at' => now(),
                 ]);
 
-                Log::info("Order {$this->order->id} synced to Bling with number {$blingOrderNumber}");
+                Log::info("Order {$this->order->id} synced to ERP with number {$erpOrderNumber}");
             }
         } catch (\Exception $e) {
-            Log::error("Failed to sync order {$this->order->id} to Bling: " . $e->getMessage());
+            Log::error("Failed to sync order {$this->order->id} to ERP: " . $e->getMessage());
             throw $e;
         }
     }
