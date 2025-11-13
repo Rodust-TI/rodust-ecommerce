@@ -22,6 +22,10 @@ class Order extends Model
         'notes',
         'bling_id',
         'bling_synced_at',
+        'invoice_number',
+        'invoice_key',
+        'invoice_issued_at',
+        'last_bling_sync',
     ];
 
     protected $casts = [
@@ -30,6 +34,8 @@ class Order extends Model
         'shipping' => 'decimal:2',
         'total' => 'decimal:2',
         'bling_synced_at' => 'datetime',
+        'invoice_issued_at' => 'datetime',
+        'last_bling_sync' => 'datetime',
     ];
 
     /**
