@@ -1,235 +1,205 @@
-# 🚀 Guia Rápido - Próximos Passos
+# 🚀 Roadmap - Rodust Ecommerce
 
-## Status Atual ✅
+## ✅ Concluído
 
-- ✅ Laravel instalado
-- ✅ Sail configurado (MySQL + Redis)
-- ✅ Models e migrations criados (Product, Customer, Order, OrderItem)
-- ✅ Integração Bling implementada (BlingService)
-- ✅ Jobs para sincronização (SyncProductToBling, SyncOrderToBling)
-- ✅ Controllers de API (ProductController, OrderController)
-- ✅ Rotas de API configuradas
-- ✅ Documentação de integração WordPress criada
-- ✅ Filas configuradas com Redis
+### Infraestrutura
+- [x] Laravel 12.10.1 instalado com Docker Sail
+- [x] MySQL 8.0 (porta 3307) + Redis configurados
+- [x] WordPress instalado e conectado ao XAMPP
+- [x] Porta Laravel alterada para 8000 (evitar conflito com XAMPP porta 80)
 
-## 📝 Respostas às Suas Dúvidas
+### Arquitetura ERP
+- [x] ERPInterface (abstração genérica para qualquer ERP)
+- [x] BlingV3Adapter (implementação Bling API v3 com OAuth2)
+- [x] ERPServiceProvider (dependency injection)
+- [x] BlingValidateCommand (validação homologação Bling)
+- [x] Token refresh automático (30 dias)
+- [x] Normalize/Denormalize para transformação de dados
 
-### 1. Docker e Múltiplos Projetos
+### Database Schema
+- [x] Tabela `products` (SKU, nome, preço, estoque, bling_id, last_bling_sync)
+- [x] Tabela `customers` (nome, email, telefone, CPF/CNPJ, bling_id)
+- [x] Tabela `orders` (cliente, total, status, payment_method, bling_id)
+- [x] Tabela `order_items` (produto, quantidade, preço, desconto)
+- [x] Campos de nota fiscal (invoice_number, invoice_key, invoice_issued_at)
 
-**Não há risco de conflito!** 
+### API REST
+- [x] ProductController (CRUD produtos)
+- [x] OrderController (criar/listar pedidos)
+- [x] WebhookController (receber eventos do Bling)
+- [x] Rotas públicas `/api/products` e `/api/orders`
+- [x] Rotas admin protegidas com Sanctum
+- [x] Webhook endpoint `/api/webhooks/bling`
 
-- Seu outro projeto Laravel (que vi nos containers rodando) está completamente isolado
-- Cada projeto Sail cria sua própria rede Docker e volumes
-- Docker Desktop gerencia apenas containers **locais** - não afeta projetos em outros servidores
-- Os containers que vi (`laravel_nginx`, `laravel_app`, `laravel_db_backup`) são do outro projeto e continuarão funcionando normalmente
+### WordPress Plugin
+- [x] Estrutura completa (16 arquivos)
+- [x] Custom Post Type `rodust_product`
+- [x] 4 Taxonomias (categoria, tag, marca, tipo de ferramenta)
+- [x] API Client genérico
+- [x] Settings page com teste de conexão
+- [x] Documentação (README.md com 400+ linhas)
+- [x] Conexão WordPress ↔ Laravel testada e funcionando
 
-### 2. Arquivos no SSD Externo
+### Webhooks Bling
+- [x] Handler para produtos (criar/atualizar/deletar)
+- [x] Handler para estoques (atualizar saldo em tempo real)
+- [x] Handler para pedidos (mudança de status)
+- [x] Handler para NF-e/NFC-e (salvar dados da nota fiscal)
+- [x] Logs detalhados de todos os eventos
 
-**Sim, é possível e é a configuração atual!**
+---
 
-- ✅ Arquivos ficam em `M:\Websites\rodust.com.br\ecommerce`
-- ✅ Containers Linux executam via Docker Desktop + WSL2
-- ✅ Performance adequada para desenvolvimento
-- ✅ Total portabilidade entre computadores
+## 🔄 Em Andamento
 
-**Como funciona:**
-```
-SSD M:\ (Windows)  →  Docker Desktop (WSL2)  →  Container Linux
-     ↓                        ↓                       ↓
-  Arquivos          Volume Bind Mount           Execução
-```
+### Validação Bling
+- [ ] Executar comando `php artisan bling:validate --token=TOKEN`
+- [ ] Obter token OAuth2 do Bling
+- [ ] Testar buscar produto já cadastrado no Bling
+- [ ] Validar sincronização bidirecional
 
-### 3. Warnings de Classes Duplicadas
+---
 
-**NÃO é por causa do outro projeto Laravel!**
+## 📋 Próximos Passos
 
-Causas:
-- Ocorre quando pacotes do Composer têm arquivos em locais duplicados no `vendor/`
-- É um aviso do autoloader, não afeta funcionamento
-- Comum em projetos novos Laravel 12
+### 1. Integração Bling (Prioridade: ALTA)
+- [ ] Obter token OAuth2 via link de convite do Bling
+- [ ] Configurar webhooks no painel Bling:
+  - Alias: `rodust-ecommerce`
+  - URL: `http://localhost:8000/api/webhooks/bling` (testes locais)
+  - Ativar: produtos, estoques, pedidos, notasfiscais, nfce
+- [ ] Criar comando para importar produtos existentes do Bling
+- [ ] Testar fluxo completo: pedido no WP → Laravel → Bling
+- [ ] Implementar sincronização de categorias do Bling
 
-Solução (opcional): Já documentei no README como suprimir esses avisos se incomodar.
+### 2. Segurança Webhooks (Prioridade: ALTA - PRÉ-PRODUÇÃO)
+- [ ] Implementar validação de assinatura HMAC-SHA256 do Bling
+- [ ] Adicionar whitelist de IPs do Bling
+- [ ] Remover bypass de validação em ambiente local (linha 79 WebhookController)
+- [ ] Adicionar rate limiting nos endpoints de webhook
+- [ ] Log de tentativas de acesso não autorizadas
 
-### 4. Montar SSD Diretamente no WSL
+### 3. WordPress Frontend (Prioridade: ALTA)
+- [ ] Implementar listagem de produtos (loop WordPress)
+- [ ] Página de produto individual (single-rodust_product.php)
+- [ ] Sistema de carrinho (WooCommerce-like):
+  - Session/Cookie para armazenar itens
+  - AJAX para adicionar/remover produtos
+  - Exibir subtotal/total
+- [ ] Checkout:
+  - Formulário de dados do cliente
+  - Seleção de endereço de entrega
+  - Escolha de método de pagamento
+  - Integração com gateway (PIX, cartão, boleto)
+  - Enviar pedido para Laravel API
+- [ ] Página "Meus Pedidos" (rastreamento)
+- [ ] Filtros e busca de produtos
+- [ ] Breadcrumbs e navegação
 
-**Não é necessário** para seu caso de uso, mas é possível:
+### 4. Sincronização Automática
+- [ ] Job para sincronizar produtos Laravel → Bling (a cada X minutos)
+- [ ] Job para sincronizar estoque Bling → Laravel (a cada X minutos)
+- [ ] Command para sincronização manual: `php artisan sync:bling --products --stock`
+- [ ] Tratamento de conflitos (último a atualizar vence)
+- [ ] Fila de retry para sincronizações falhadas
 
-**Método Simples (atual):**
-```powershell
-# Arquivos em M:\ são acessados via /mnt/m no WSL
-# Docker Desktop faz isso automaticamente
-```
+### 5. Gestão de Estoque
+- [ ] Validar estoque antes de finalizar pedido
+- [ ] Reservar estoque ao criar pedido (não permitir overselling)
+- [ ] Liberar estoque se pedido cancelado
+- [ ] Alertas de estoque baixo (notificação admin)
+- [ ] Histórico de movimentações de estoque
 
-**Método Avançado (mount nativo):**
-```powershell
-# Requer admin e identifica o disco físico
-wsl --mount \\.\PHYSICALDRIVE2 --bare
-# Depois cria partição no WSL
-```
+### 6. Pagamentos
+- [ ] Integração com Mercado Pago (PIX, cartão, boleto)
+- [ ] Ou: Integração com PagSeguro / PayPal
+- [ ] Webhooks de confirmação de pagamento
+- [ ] Atualizar status do pedido: pending → paid → processing
+- [ ] Salvar transaction_id e método usado
 
-**Recomendação:** Use o método atual (mais simples e funciona bem).
+### 7. Envio e Logística
+- [ ] Integração com Correios (cálculo de frete)
+- [ ] Ou: Melhor Envio / Frenet (cotação múltiplas transportadoras)
+- [ ] Salvar código de rastreamento no pedido
+- [ ] Enviar email com código de rastreamento ao cliente
+- [ ] Atualizar status: paid → shipped → delivered
 
-## ▶️ Como Continuar AGORA
+### 8. Emails Transacionais
+- [ ] Email de confirmação de pedido
+- [ ] Email de pagamento aprovado
+- [ ] Email de pedido enviado (com rastreamento)
+- [ ] Email de pedido entregue
+- [ ] Email de pedido cancelado
+- [ ] Templates HTML responsivos
 
-### Opção A: Aguardar Build Terminar
+### 9. Admin Dashboard (Laravel)
+- [ ] Dashboard com métricas (vendas, pedidos, estoque)
+- [ ] CRUD de produtos (interface visual)
+- [ ] Gestão de pedidos (mudar status, cancelar, reembolsar)
+- [ ] Relatórios de vendas (diário, mensal, anual)
+- [ ] Logs de sincronização com Bling
+- [ ] Gestão de clientes
 
-O build da imagem Docker está rodando. Pode demorar 5-10 minutos na primeira vez.
+### 10. SEO e Performance
+- [ ] Meta tags dinâmicas (Yoast SEO ou similar)
+- [ ] Schema.org markup para produtos
+- [ ] Sitemap XML de produtos
+- [ ] Cache de respostas da API (Redis)
+- [ ] CDN para imagens de produtos
+- [ ] Lazy loading de imagens
+- [ ] Minificar CSS/JS
 
-**Verificar progresso:**
-```powershell
-# Em outro terminal
-docker ps -a
-```
+### 11. Testes
+- [ ] Testes unitários (Models, Services)
+- [ ] Testes de integração (API endpoints)
+- [ ] Testes de webhook (simular eventos Bling)
+- [ ] Testes E2E (checkout completo)
+- [ ] CI/CD com GitHub Actions
 
-**Quando terminar:**
-```powershell
-cd 'M:\Websites\rodust.com.br\ecommerce'
-$env:WWWUSER="1000"; $env:WWWGROUP="1000"
-docker compose up -d
-```
+### 12. Produção
+- [ ] Migrar para servidor (VPS, AWS, DigitalOcean)
+- [ ] Configurar SSL (Let's Encrypt)
+- [ ] Atualizar BLING_REDIRECT_URI para URL real
+- [ ] Configurar webhooks Bling com URL pública (https://rodust.com.br/api/webhooks/bling)
+- [ ] Backup automático do banco de dados
+- [ ] Monitoramento (Sentry, New Relic)
+- [ ] Logs centralizados
+- [ ] Firewall e proteção DDoS
 
-### Opção B: Usar Atalho que Criei
+### 13. Troca de ERP (Futuro Distante)
+- [ ] Criar adapter para novo ERP (implementar ERPInterface)
+- [ ] Atualizar ERPServiceProvider para usar novo adapter
+- [ ] Migrar dados do Bling para novo ERP
+- [ ] Testar todos os fluxos com novo ERP
 
-Criei um script `sail.ps1` que facilita o uso, mas precisa de ajuste (bash não encontrado no WSL).
+---
 
-**Solução temporária - use comandos diretos:**
-```powershell
-# Subir containers
-cd 'M:\Websites\rodust.com.br\ecommerce'
-$env:WWWUSER="1000"
-## 🎯 Próximos Passos
+## 🐛 Bugs Conhecidos
+- Nenhum no momento
 
-### 1. Configurar Bling API
+---
 
-Edite o arquivo `.env` e adicione sua chave da API do Bling:
+## 💡 Ideias Futuras
+- [ ] Programa de fidelidade (pontos)
+- [ ] Cupons de desconto
+- [ ] Produtos relacionados / Cross-sell
+- [ ] Avaliações de produtos
+- [ ] Wishlist (lista de desejos)
+- [ ] Comparador de produtos
+- [ ] Multi-idioma (PT, EN, ES)
+- [ ] Multi-moeda (BRL, USD, EUR)
+- [ ] B2B: preços diferenciados para atacado
+- [ ] Marketplace: múltiplos vendedores
 
-```env
-BLING_API_KEY=sua-chave-bling-aqui
-BLING_BASE_URL=https://bling.com.br/Api/v2
-```
+---
 
-### 2. Testar a API
+## 📝 Notas Técnicas
+- **Arquitetura**: Headless (Laravel API + WordPress Frontend)
+- **Abstração ERP**: ERPInterface permite trocar Bling por outro ERP com mudança de 1 linha
+- **Segurança**: Nunca armazenar credenciais Bling no WordPress (apenas no Laravel .env)
+- **Sincronização**: Webhooks em tempo real + Jobs agendados (redundância)
+- **Estoque**: Bling é source of truth, Laravel é cache local
 
-```bash
-# Iniciar worker de filas (em um terminal separado)
-docker compose exec laravel.test php artisan queue:work redis
-
-# Criar um produto de teste
-docker compose exec laravel.test php artisan tinker
-```
-
-No Tinker:
-```php
-$product = App\Models\Product::create([
-    'sku' => 'TEST-001',
-    'name' => 'Produto Teste',
-    'description' => 'Descrição do produto',
-    'price' => 99.90,
-    'cost' => 50.00,
-    'stock' => 10,
-    'active' => true,
-]);
-
-// Disparar sincronização com Bling
-App\Jobs\SyncProductToBling::dispatch($product);
-```
-
-### 3. Testar Endpoints da API
-
-```bash
-# Listar produtos
-curl http://localhost/api/products
-
-# Ver um produto
-curl http://localhost/api/products/1
-
-# Criar pedido (checkout)
-curl -X POST http://localhost/api/orders \
-  -H "Content-Type: application/json" \
-  -d '{
-    "customer": {
-      "name": "João Silva",
-      "email": "joao@example.com",
-      "phone": "11999999999"
-    },
-    "items": [
-      {
-        "product_id": 1,
-        "quantity": 2
-      }
-    ],
-    "shipping": 15.00,
-    "payment_method": "credit_card"
-  }'
-```
-
-### 4. Configurar WordPress
-
-Siga o guia completo em **`INTEGRACAO-WORDPRESS.md`**:
-
-1. Instalar WordPress em um diretório/subdomínio separado
-2. Criar plugin customizado para consumir a API Laravel
-3. Adicionar shortcodes para exibir produtos
-4. Implementar JavaScript para carrinho e checkout
-
-### 5. Tarefas Opcionais
-
-- [ ] Criar seeders para popular banco com dados de teste
-- [ ] Adicionar autenticação Sanctum para área administrativa
-- [ ] Implementar webhook do Bling para sincronização bidirecional
-- [ ] Adicionar cache Redis para consultas de produtos
-- [ ] Configurar CORS para o domínio WordPress em produção
-- [ ] Implementar gateway de pagamento (Mercado Pago, PagSeguro)
-- [ ] Adicionar cálculo de frete via API dos Correios
-
-## 📂 Estrutura do Projeto
-
-```
-app/
-├── Models/
-│   ├── Product.php          # Model de produtos
-│   ├── Customer.php         # Model de clientes
-│   ├── Order.php           # Model de pedidos
-│   └── OrderItem.php       # Model de itens do pedido
-├── Services/
-│   └── BlingService.php    # Serviço de integração com Bling
-├── Jobs/
-│   ├── SyncProductToBling.php   # Job de sincronização de produtos
-│   └── SyncOrderToBling.php     # Job de sincronização de pedidos
-└── Http/Controllers/Api/
-    ├── ProductController.php    # Controller de produtos
-    └── OrderController.php      # Controller de pedidos
-
-database/migrations/
-├── *_create_products_table.php
-├── *_create_customers_table.php
-├── *_create_orders_table.php
-└── *_create_order_items_table.php
-
-routes/
-└── api.php                 # Rotas da API REST
-
-config/
-└── services.php            # Configuração do Bling
-```
-
-## 🔄 Fluxo de Sincronização
-
-### Produto Laravel → Bling
-
-1. Criar/atualizar produto no Laravel
-2. Job `SyncProductToBling` é disparado
-3. `BlingService` envia dados via API
-4. Bling retorna ID, Laravel salva em `bling_id`
-
-### Pedido WordPress → Laravel → Bling
-
-1. Cliente finaliza compra no WordPress
-2. WordPress envia POST para `/api/orders`
-3. Laravel cria pedido e itens
-4. Job `SyncOrderToBling` é disparado
-5. `BlingService` envia pedido para Bling
-6. Estoque é atualizado automaticamente
+---
 
 ## 🛠️ Comandos Úteis
 
@@ -237,32 +207,49 @@ config/
 # Iniciar containers
 docker compose up -d
 
-# Ver logs
+# Ver logs em tempo real
 docker compose logs -f laravel.test
 
-# Worker de filas
-docker compose exec laravel.test php artisan queue:work redis
+# Worker de filas (rodar em terminal separado)
+docker compose exec laravel.test php artisan queue:work redis --tries=3
+
+# Validar integração Bling
+docker compose exec laravel.test php artisan bling:validate --token=SEU_TOKEN_AQUI
 
 # Rodar migrations
 docker compose exec laravel.test php artisan migrate
 
+# Rollback última migration
+docker compose exec laravel.test php artisan migrate:rollback
+
 # Criar migration
 docker compose exec laravel.test php artisan make:migration nome_da_migration
 
-# Criar model
-docker compose exec laravel.test php artisan make:model NomeModel
-
-# Criar controller
-docker compose exec laravel.test php artisan make:controller NomeController
+# Criar model com migration e controller
+docker compose exec laravel.test php artisan make:model NomeModel -mc
 
 # Limpar cache
 docker compose exec laravel.test php artisan cache:clear
 docker compose exec laravel.test php artisan config:clear
+docker compose exec laravel.test php artisan route:clear
+
+# Listar rotas
+docker compose exec laravel.test php artisan route:list
 
 # Acessar MySQL
 docker compose exec mysql mysql -u sail -ppassword laravel
+
+# Testar API
+curl http://localhost:8000/api/products
+curl http://localhost:8000/api/products/1
+
+# Git
+git status
+git add .
+git commit -m "mensagem"
+git log --oneline
 ```
 
 ---
 
-**Próximo Passo:** Abrir terminal WSL e rodar `./vendor/bin/sail up -d` 🚀
+**Última atualização:** 2025-11-13
