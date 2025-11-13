@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'bling' => [
+        'key' => env('BLING_API_KEY'),
+        'base_url' => env('BLING_BASE_URL', 'https://bling.com.br/Api/v2'),
+    ],
+
 ];

@@ -4,8 +4,13 @@
 
 - ✅ Laravel instalado
 - ✅ Sail configurado (MySQL + Redis)
-- ✅ README completo criado
-- ⏳ Build da imagem Docker em andamento
+- ✅ Models e migrations criados (Product, Customer, Order, OrderItem)
+- ✅ Integração Bling implementada (BlingService)
+- ✅ Jobs para sincronização (SyncProductToBling, SyncOrderToBling)
+- ✅ Controllers de API (ProductController, OrderController)
+- ✅ Rotas de API configuradas
+- ✅ Documentação de integração WordPress criada
+- ✅ Filas configuradas com Redis
 
 ## 📝 Respostas às Suas Dúvidas
 
@@ -92,84 +97,170 @@ Criei um script `sail.ps1` que facilita o uso, mas precisa de ajuste (bash não 
 # Subir containers
 cd 'M:\Websites\rodust.com.br\ecommerce'
 $env:WWWUSER="1000"
-$env:WWWGROUP="1000"
+## 🎯 Próximos Passos
+
+### 1. Configurar Bling API
+
+Edite o arquivo `.env` e adicione sua chave da API do Bling:
+
+```env
+BLING_API_KEY=sua-chave-bling-aqui
+BLING_BASE_URL=https://bling.com.br/Api/v2
+```
+
+### 2. Testar a API
+
+```bash
+# Iniciar worker de filas (em um terminal separado)
+docker compose exec laravel.test php artisan queue:work redis
+
+# Criar um produto de teste
+docker compose exec laravel.test php artisan tinker
+```
+
+No Tinker:
+```php
+$product = App\Models\Product::create([
+    'sku' => 'TEST-001',
+    'name' => 'Produto Teste',
+    'description' => 'Descrição do produto',
+    'price' => 99.90,
+    'cost' => 50.00,
+    'stock' => 10,
+    'active' => true,
+]);
+
+// Disparar sincronização com Bling
+App\Jobs\SyncProductToBling::dispatch($product);
+```
+
+### 3. Testar Endpoints da API
+
+```bash
+# Listar produtos
+curl http://localhost/api/products
+
+# Ver um produto
+curl http://localhost/api/products/1
+
+# Criar pedido (checkout)
+curl -X POST http://localhost/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customer": {
+      "name": "João Silva",
+      "email": "joao@example.com",
+      "phone": "11999999999"
+    },
+    "items": [
+      {
+        "product_id": 1,
+        "quantity": 2
+      }
+    ],
+    "shipping": 15.00,
+    "payment_method": "credit_card"
+  }'
+```
+
+### 4. Configurar WordPress
+
+Siga o guia completo em **`INTEGRACAO-WORDPRESS.md`**:
+
+1. Instalar WordPress em um diretório/subdomínio separado
+2. Criar plugin customizado para consumir a API Laravel
+3. Adicionar shortcodes para exibir produtos
+4. Implementar JavaScript para carrinho e checkout
+
+### 5. Tarefas Opcionais
+
+- [ ] Criar seeders para popular banco com dados de teste
+- [ ] Adicionar autenticação Sanctum para área administrativa
+- [ ] Implementar webhook do Bling para sincronização bidirecional
+- [ ] Adicionar cache Redis para consultas de produtos
+- [ ] Configurar CORS para o domínio WordPress em produção
+- [ ] Implementar gateway de pagamento (Mercado Pago, PagSeguro)
+- [ ] Adicionar cálculo de frete via API dos Correios
+
+## 📂 Estrutura do Projeto
+
+```
+app/
+├── Models/
+│   ├── Product.php          # Model de produtos
+│   ├── Customer.php         # Model de clientes
+│   ├── Order.php           # Model de pedidos
+│   └── OrderItem.php       # Model de itens do pedido
+├── Services/
+│   └── BlingService.php    # Serviço de integração com Bling
+├── Jobs/
+│   ├── SyncProductToBling.php   # Job de sincronização de produtos
+│   └── SyncOrderToBling.php     # Job de sincronização de pedidos
+└── Http/Controllers/Api/
+    ├── ProductController.php    # Controller de produtos
+    └── OrderController.php      # Controller de pedidos
+
+database/migrations/
+├── *_create_products_table.php
+├── *_create_customers_table.php
+├── *_create_orders_table.php
+└── *_create_order_items_table.php
+
+routes/
+└── api.php                 # Rotas da API REST
+
+config/
+└── services.php            # Configuração do Bling
+```
+
+## 🔄 Fluxo de Sincronização
+
+### Produto Laravel → Bling
+
+1. Criar/atualizar produto no Laravel
+2. Job `SyncProductToBling` é disparado
+3. `BlingService` envia dados via API
+4. Bling retorna ID, Laravel salva em `bling_id`
+
+### Pedido WordPress → Laravel → Bling
+
+1. Cliente finaliza compra no WordPress
+2. WordPress envia POST para `/api/orders`
+3. Laravel cria pedido e itens
+4. Job `SyncOrderToBling` é disparado
+5. `BlingService` envia pedido para Bling
+6. Estoque é atualizado automaticamente
+
+## 🛠️ Comandos Úteis
+
+```bash
+# Iniciar containers
 docker compose up -d
+
+# Ver logs
+docker compose logs -f laravel.test
+
+# Worker de filas
+docker compose exec laravel.test php artisan queue:work redis
 
 # Rodar migrations
 docker compose exec laravel.test php artisan migrate
 
-# Acessar shell do container
-docker compose exec laravel.test bash
-```
+# Criar migration
+docker compose exec laravel.test php artisan make:migration nome_da_migration
 
-### Opção C: Usar WSL Diretamente (Recomendado)
+# Criar model
+docker compose exec laravel.test php artisan make:model NomeModel
 
-```bash
-# Abrir WSL Ubuntu
-wsl
+# Criar controller
+docker compose exec laravel.test php artisan make:controller NomeController
 
-# Navegar para o projeto
-cd /mnt/m/Websites/rodust.com.br/ecommerce
+# Limpar cache
+docker compose exec laravel.test php artisan cache:clear
+docker compose exec laravel.test php artisan config:clear
 
-# Subir containers
-./vendor/bin/sail up -d
-
-# Rodar migrations
-./vendor/bin/sail artisan migrate
-```
-
-## 🎯 Sequência Recomendada para Hoje
-
-1. **Aguardar build terminar** (já está rodando)
-2. **Subir containers:**
-   ```bash
-   # No WSL
-   wsl
-   cd /mnt/m/Websites/rodust.com.br/ecommerce
-   ./vendor/bin/sail up -d
-   ```
-3. **Rodar migrations:**
-   ```bash
-   ./vendor/bin/sail artisan migrate
-   ```
-4. **Acessar http://localhost** no navegador
-5. **Instalar pacotes:**
-   ```bash
-   ./vendor/bin/sail composer require guzzlehttp/guzzle laravel/sanctum spatie/laravel-permission
-   ```
-
-## 📚 Documentação Completa
-
-Tudo está documentado no **`README.md`** que criei:
-- Como usar Sail
-- Arquitetura WordPress + Laravel
-- Integração com Bling
-- Troubleshooting completo
-- Respostas sobre Docker e SSD
-
-## ❓ Dúvidas Frequentes
-
-**Q: Posso rodar este projeto e o outro ao mesmo tempo?**  
-A: Sim, mas mude as portas no `.env` deste projeto:
-```env
-APP_PORT=8080
-FORWARD_DB_PORT=3307
-```
-
-**Q: Como faço backup do projeto para levar em outro PC?**  
-A: Apenas copie a pasta `M:\Websites\rodust.com.br\ecommerce` (sem `vendor/` e `node_modules/`). No outro PC rode `composer install`.
-
-**Q: Preciso instalar PHP/MySQL/Redis no Windows?**  
-A: NÃO! Tudo roda dentro dos containers Docker.
-
-## 🆘 Se Algo Der Errado
-
-```powershell
-# Parar tudo e recomeçar
-cd 'M:\Websites\rodust.com.br\ecommerce'
-docker compose down
-docker compose build --no-cache
-docker compose up -d
+# Acessar MySQL
+docker compose exec mysql mysql -u sail -ppassword laravel
 ```
 
 ---
