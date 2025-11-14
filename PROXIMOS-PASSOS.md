@@ -51,11 +51,27 @@
 
 ## 🔄 Em Andamento
 
+### WordPress Frontend (Desenvolvimento prioritário enquanto aguarda Bling)
+- [ ] Criar template de listagem de produtos
+- [ ] Criar template de produto individual
+- [ ] Implementar sistema de carrinho
+- [ ] Implementar checkout com gateway de pagamento
+- [ ] Integrar API de logística (cálculo de frete)
+
+---
+
+## ⏸️ Pausado (Aguardando Configuração)
+
 ### Validação Bling
+**Status:** Aguardando equipe Bling configurar conta para desenvolvimento (isenção de taxas)
+
+Quando retornar:
+- [ ] Executar comando `php artisan bling:get-token CODIGO_OAUTH`
 - [ ] Executar comando `php artisan bling:validate --token=TOKEN`
-- [ ] Obter token OAuth2 do Bling
+- [ ] Executar comando `php artisan bling:list-products --limit=10`
 - [ ] Testar buscar produto já cadastrado no Bling
 - [ ] Validar sincronização bidirecional
+- [ ] Configurar webhooks no painel Bling
 
 ---
 
