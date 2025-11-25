@@ -41,6 +41,7 @@ return [
         'client_secret' => env('BLING_CLIENT_SECRET'),
         'base_url' => env('BLING_BASE_URL', 'https://api.bling.com.br/Api/v3'),
         'default_warehouse_id' => env('BLING_DEFAULT_WAREHOUSE_ID', 1),
+        'customer_type_id' => env('BLING_CUSTOMER_TYPE_ID'), // ID do tipo "Cliente ecommerce"
         
         // Redirect para OAuth (configure no painel Bling)
         'redirect_uri' => env('BLING_REDIRECT_URI', env('APP_URL') . '/bling/callback'),

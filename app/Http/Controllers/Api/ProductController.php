@@ -110,4 +110,39 @@ class ProductController extends Controller
 
         return response()->json(['message' => 'Product deleted successfully'], 200);
     }
+
+    /**
+     * Sync products from Bling to Laravel
+     */
+    public function syncFromBling(Request $request)
+    {
+        try {
+            $limit = $request->input('limit', 100);
+            $force = $request->input('force', false);
+
+            // Executar comando de sincronização
+            \Illuminate\Support\Facades\Artisan::call('bling:sync-products', [
+                '--limit' => $limit,
+                '--force' => $force
+            ]);
+
+            $output = \Illuminate\Support\Facades\Artisan::output();
+
+            // Buscar produtos após sincronização
+            $products = Product::where('active', true)->get();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Sincronização concluída com sucesso',
+                'output' => $output,
+                'total_products' => $products->count()
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao sincronizar: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

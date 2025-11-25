@@ -12,7 +12,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Aplicar CORS globalmente em todas as rotas
+        $middleware->use([
+            \App\Http\Middleware\CorsMiddleware::class,
+        ]);
+        
+        // Desabilitar CSRF para rotas API (stateless)
+        $middleware->validateCsrfTokens(except: [
+            'api/*',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

@@ -1,0 +1,7 @@
+{
+  "name": "Teste Usuario",
+  "email": "teste123@teste.com",
+  "cpf": "12345678901",
+  "password": "123456",
+  "password_confirmation": "123456"
+}
