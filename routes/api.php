@@ -104,9 +104,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/card', [PaymentController::class, 'createCardPayment']);
     });
 
-    // Criar pedido (checkout) - requer autenticação
-    Route::post('orders', [OrderController::class, 'store']);
-    Route::get('orders/{id}', [OrderController::class, 'show']);
+    // Pedidos do cliente - requer autenticação
+    Route::get('orders', [OrderController::class, 'index']); // Lista pedidos do cliente
+    Route::post('orders', [OrderController::class, 'store']); // Criar pedido (checkout)
+    Route::get('orders/{id}', [OrderController::class, 'show']); // Ver detalhes de um pedido
 
     // Gerenciamento de produtos (admin)
     Route::prefix('admin/products')->group(function () {

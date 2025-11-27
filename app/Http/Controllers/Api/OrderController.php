@@ -18,15 +18,21 @@ class OrderController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Order::with(['customer', 'items']);
+        $query = Order::with(['customer', 'items.product']);
+
+        // Se não for admin, mostrar apenas pedidos do cliente autenticado
+        $user = $request->user();
+        if ($user && !$request->has('admin')) {
+            $query->where('customer_id', $user->id);
+        }
 
         // Filtro por status
         if ($request->has('status')) {
             $query->where('status', $request->status);
         }
 
-        // Filtro por cliente
-        if ($request->has('customer_id')) {
+        // Filtro por cliente (apenas para admin)
+        if ($request->has('customer_id') && $request->has('admin')) {
             $query->where('customer_id', $request->customer_id);
         }
 
