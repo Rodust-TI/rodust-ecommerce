@@ -210,7 +210,7 @@ class BlingSyncProducts extends Command
             // Buscar produtos do Laravel
             $products = Product::where('active', true)->get();
             
-            $wpUrl = rtrim(config('app.frontend_url', 'http://localhost/rodust.com.br/wordpress'), '/');
+            $wpUrl = rtrim(config('app.frontend_url', 'http://localhost:8080'), '/');
             
             foreach ($products as $product) {
                 // Enviar para API do WordPress
@@ -222,6 +222,7 @@ class BlingSyncProducts extends Command
                     'stock' => (int) $product->stock,
                     'image_url' => $product->image ?? '',
                     'bling_id' => $product->bling_id,
+                    'laravel_id' => $product->id, // IMPORTANTE: ID do Laravel
                 ]);
 
                 if ($response->successful()) {

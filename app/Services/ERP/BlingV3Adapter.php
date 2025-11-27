@@ -123,9 +123,25 @@ class BlingV3Adapter implements ERPInterface
     protected function request(string $method, string $endpoint, array $options = []): array
     {
         try {
-            $options['headers']['Authorization'] = 'Bearer ' . $this->getAccessToken();
+            // Garantir que headers seja um array
+            if (!isset($options['headers'])) {
+                $options['headers'] = [];
+            }
             
-            $response = $this->client->request($method, $endpoint, $options);
+            $options['headers']['Authorization'] = 'Bearer ' . $this->getAccessToken();
+            $options['headers']['Accept'] = 'application/json';
+            $options['headers']['Content-Type'] = 'application/json';
+            
+            // Construir URL completa (Guzzle tem problemas com base_uri e endpoints relativos)
+            $url = rtrim($this->baseUrl, '/') . '/' . ltrim($endpoint, '/');
+            
+            Log::debug("BlingV3Adapter - Request", [
+                'method' => $method, 
+                'url' => $url,
+                'payload' => isset($options['json']) ? json_encode($options['json'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : null
+            ]);
+            
+            $response = $this->client->request($method, $url, $options);
             
             return [
                 'success' => true,
@@ -133,11 +149,20 @@ class BlingV3Adapter implements ERPInterface
                 'headers' => $response->getHeaders(),
             ];
         } catch (GuzzleException $e) {
-            Log::error("Bling API Error [{$method} {$endpoint}]: " . $e->getMessage());
+            $errorBody = null;
+            if (method_exists($e, 'getResponse') && $e->getResponse()) {
+                $errorBody = json_decode($e->getResponse()->getBody()->getContents(), true);
+            }
+            
+            Log::error("Bling API Error [{$method} {$endpoint}]", [
+                'message' => $e->getMessage(),
+                'error_body' => $errorBody
+            ]);
             
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
+                'error_details' => $errorBody,
             ];
         }
     }
@@ -147,15 +172,48 @@ class BlingV3Adapter implements ERPInterface
      */
     public function getProducts(array $filters = []): array
     {
-        $result = $this->request('GET', '/produtos', [
+        Log::info('BlingV3Adapter - getProducts chamado', ['filters' => $filters]);
+        
+        $result = $this->request('GET', 'produtos', [
             'query' => $filters,
         ]);
 
+        Log::info('BlingV3Adapter - resultado request', [
+            'success' => $result['success'],
+            'has_data' => isset($result['data']),
+            'data_keys' => isset($result['data']) ? array_keys($result['data']) : []
+        ]);
+
         if (!$result['success']) {
+            Log::error('BlingV3Adapter - request falhou', ['error' => $result['error'] ?? 'unknown']);
             return [];
         }
 
-        return array_map([$this, 'normalizeProduct'], $result['data']['data'] ?? []);
+        $products = $result['data']['data'] ?? [];
+        Log::info('BlingV3Adapter - produtos encontrados', ['count' => count($products)]);
+
+        // Normalizar lista resumida de produtos (sem detalhes completos)
+        return array_map([$this, 'normalizeProductListItem'], $products);
+    }
+    
+    /**
+     * Normalizar item da lista resumida de produtos
+     * A listagem /produtos retorna dados básicos, não os detalhes completos
+     */
+    protected function normalizeProductListItem(array $blingProduct): array
+    {
+        return [
+            'sku' => $blingProduct['codigo'] ?? '',
+            'name' => $blingProduct['nome'] ?? '',
+            'description' => $blingProduct['descricaoCurta'] ?? $blingProduct['descricao'] ?? '',
+            'price' => $blingProduct['preco'] ?? 0,
+            'cost' => $blingProduct['precoCusto'] ?? 0,
+            'stock' => $blingProduct['estoque']['saldoVirtualTotal'] ?? 0,
+            'image' => $blingProduct['imagemURL'] ?? null,
+            'active' => ($blingProduct['situacao'] ?? 'A') === 'A',
+            'bling_id' => (string) $blingProduct['id'],
+            'erp_id' => (string) $blingProduct['id'], // Alias para compatibilidade
+        ];
     }
 
     /**
@@ -163,7 +221,7 @@ class BlingV3Adapter implements ERPInterface
      */
     public function getProduct(string $erpId): ?array
     {
-        $result = $this->request('GET', "/produtos/{$erpId}");
+        $result = $this->request('GET', "produtos/{$erpId}");
 
         if (!$result['success']) {
             return null;
@@ -179,7 +237,7 @@ class BlingV3Adapter implements ERPInterface
     {
         $blingData = $this->denormalizeProduct($productData);
         
-        $result = $this->request('POST', '/produtos', [
+        $result = $this->request('POST', 'produtos', [
             'json' => $blingData,
         ]);
 
@@ -193,7 +251,7 @@ class BlingV3Adapter implements ERPInterface
     {
         $blingData = $this->denormalizeProduct($productData);
         
-        $result = $this->request('PUT', "/produtos/{$erpId}", [
+        $result = $this->request('PUT', "produtos/{$erpId}", [
             'json' => $blingData,
         ]);
 
@@ -205,7 +263,7 @@ class BlingV3Adapter implements ERPInterface
      */
     public function deleteProduct(string $erpId): bool
     {
-        $result = $this->request('DELETE', "/produtos/{$erpId}");
+        $result = $this->request('DELETE', "produtos/{$erpId}");
         return $result['success'];
     }
 
@@ -216,11 +274,17 @@ class BlingV3Adapter implements ERPInterface
     {
         $blingData = $this->denormalizeOrder($orderData);
         
-        $result = $this->request('POST', '/pedidos/vendas', [
+        $result = $this->request('POST', 'pedidos/vendas', [
             'json' => $blingData,
         ]);
 
-        return $result['data']['data']['numero'] ?? null;
+        Log::info('Bling createOrder result', [
+            'success' => $result['success'] ?? false,
+            'result' => $result
+        ]);
+
+        // Bling retorna o ID do pedido em data.data.id
+        return isset($result['data']['data']['id']) ? (string) $result['data']['data']['id'] : null;
     }
 
     /**
@@ -228,7 +292,7 @@ class BlingV3Adapter implements ERPInterface
      */
     public function updateStock(string $erpId, int $quantity): bool
     {
-        $result = $this->request('PATCH', "/produtos/{$erpId}/estoques", [
+        $result = $this->request('PATCH', "produtos/{$erpId}/estoques", [
             'json' => [
                 'deposito' => ['id' => config('services.bling.default_warehouse_id', 1)],
                 'operacao' => 'B', // Balanço (ajuste absoluto)
@@ -244,7 +308,21 @@ class BlingV3Adapter implements ERPInterface
      */
     public function getStatuses(): array
     {
-        $result = $this->request('GET', '/situacoes/modulos');
+        $result = $this->request('GET', 'situacoes/modulos');
+        
+        if (!$result['success']) {
+            return [];
+        }
+
+        return $result['data']['data'] ?? [];
+    }
+
+    /**
+     * Obter formas de pagamento cadastradas no Bling
+     */
+    public function getPaymentMethods(): array
+    {
+        $result = $this->request('GET', 'formas-pagamentos');
         
         if (!$result['success']) {
             return [];
@@ -259,7 +337,7 @@ class BlingV3Adapter implements ERPInterface
     public function testConnection(): bool
     {
         try {
-            $result = $this->request('GET', '/produtos', ['query' => ['limite' => 1]]);
+            $result = $this->request('GET', 'produtos', ['query' => ['limite' => 1]]);
             return $result['success'];
         } catch (\Exception $e) {
             return false;
@@ -275,16 +353,87 @@ class BlingV3Adapter implements ERPInterface
             return null;
         }
 
+        // Extrair dimensões físicas (usado para cálculo de frete)
+        // IMPORTANTE: Bling retorna dimensões em CENTÍMETROS e peso em QUILOS
+        // Mantemos os valores originais sem conversão
+        $dimensoes = $blingProduct['dimensoes'] ?? [];
+        $width = isset($dimensoes['largura']) ? (float) $dimensoes['largura'] : null;
+        $height = isset($dimensoes['altura']) ? (float) $dimensoes['altura'] : null;
+        $length = isset($dimensoes['profundidade']) ? (float) $dimensoes['profundidade'] : null;
+        
+        // Usar peso BRUTO (não líquido) para cálculo de frete
+        $weight = isset($blingProduct['pesoBruto']) ? (float) $blingProduct['pesoBruto'] : null;
+
+        // Extrair múltiplas imagens
+        $images = [];
+        if (isset($blingProduct['midia']['imagens'])) {
+            // Imagens externas (ex: Shutterstock)
+            if (isset($blingProduct['midia']['imagens']['externas'])) {
+                foreach ($blingProduct['midia']['imagens']['externas'] as $img) {
+                    if (isset($img['link'])) {
+                        $images[] = $img['link'];
+                    }
+                }
+            }
+            // Imagens internas do Bling
+            if (isset($blingProduct['midia']['imagens']['internas'])) {
+                foreach ($blingProduct['midia']['imagens']['internas'] as $img) {
+                    if (isset($img['link'])) {
+                        $images[] = $img['link'];
+                    }
+                }
+            }
+        }
+
+        // Marca/Fabricante
+        $brand = $blingProduct['marca'] ?? null;
+
+        // Categoria do Bling
+        $blingCategoryId = null;
+        if (isset($blingProduct['categoria']['id'])) {
+            $blingCategoryId = (string) $blingProduct['categoria']['id'];
+        }
+
+        // Preço promocional (não existe no Bling diretamente, mas podemos usar precoCusto como base)
+        // Você precisará adicionar esse campo customizado no Bling se quiser usar
+        $promotionalPrice = null;
+
+        // Frete grátis
+        $freeShipping = $blingProduct['freteGratis'] ?? false;
+
+        // Imagem principal (priorizar imagemURL, depois primeira da lista)
+        $mainImage = $blingProduct['imagemURL'] ?? ($images[0] ?? null);
+
+        // Descrição (priorizar descricaoComplementar, depois descricaoCurta)
+        $description = $blingProduct['descricaoComplementar'] 
+            ?? $blingProduct['descricaoCurta'] 
+            ?? $blingProduct['observacoes'] 
+            ?? '';
+
         return [
             'sku' => $blingProduct['codigo'] ?? '',
             'name' => $blingProduct['nome'] ?? '',
-            'description' => $blingProduct['descricao'] ?? '',
+            'description' => $description,
             'price' => $blingProduct['preco'] ?? 0,
-            'cost' => $blingProduct['precoCusto'] ?? 0,
-            'stock' => $blingProduct['estoqueAtual'] ?? 0,
-            'image' => $blingProduct['imagemURL'] ?? null,
+            'promotional_price' => $promotionalPrice,
+            'cost' => $blingProduct['fornecedor']['precoCusto'] ?? 0,
+            'stock' => $blingProduct['estoque']['saldoVirtualTotal'] ?? 0,
+            'image' => $mainImage,
+            'images' => $images,
             'active' => ($blingProduct['situacao'] ?? 'A') === 'A',
-            'erp_id' => $blingProduct['id'] ?? null,
+            'bling_id' => $blingProduct['id'] ?? null,
+            'bling_category_id' => $blingCategoryId,
+            // Dimensões físicas para frete
+            'width' => $width,
+            'height' => $height,
+            'length' => $length,
+            'weight' => $weight,
+            // Informações comerciais
+            'brand' => $brand,
+            'free_shipping' => $freeShipping,
+            // Controle de sincronização
+            'last_sync_at' => now(),
+            'sync_status' => 'synced',
         ];
     }
 
@@ -310,24 +459,67 @@ class BlingV3Adapter implements ERPInterface
      */
     protected function denormalizeOrder(array $orderData): array
     {
-        return [
-            'contato' => [
-                'nome' => $orderData['customer']['name'],
-                'email' => $orderData['customer']['email'],
-                'telefone' => $orderData['customer']['phone'] ?? '',
-            ],
+        $now = now()->format('Y-m-d');
+        
+        $payload = [
+            'numero' => $orderData['order_number'] ?? '', // Número do pedido na loja
+            'data' => $now, // Data do pedido (obrigatório)
+            'dataSaida' => $now, // Data de saída (obrigatório)
+            'dataPrevista' => $now, // Data prevista (obrigatório)
             'itens' => array_map(function ($item) {
-                return [
-                    'codigo' => $item['sku'],
-                    'descricao' => $item['name'],
+                $itemData = [
+                    'descricao' => $item['name'], // Descrição do item (obrigatório)
                     'quantidade' => $item['quantity'],
                     'valor' => $item['price'],
                 ];
+                
+                // Se tem bling_id, usa produto.id (melhor opção)
+                if (!empty($item['bling_id'])) {
+                    $itemData['produto'] = ['id' => (int) $item['bling_id']];
+                } else {
+                    // Senão, usa codigo (Bling tentará encontrar o produto pelo SKU)
+                    $itemData['codigo'] = $item['sku'];
+                }
+                
+                return $itemData;
             }, $orderData['items']),
+            'parcelas' => [
+                [
+                    'dataVencimento' => now()->addDays(1)->format('Y-m-d'), // Vencimento em 1 dia
+                    'valor' => ($orderData['shipping'] + array_sum(array_map(function($item) {
+                        return $item['price'] * $item['quantity'];
+                    }, $orderData['items']))) - ($orderData['discount'] ?? 0),
+                    'observacoes' => 'Pagamento via ' . ($orderData['payment_method'] ?? 'PIX'),
+                    'formaPagamento' => [
+                        'id' => config('services.bling.payment_method_id', 6061520) // ID da forma de pagamento no Bling (Dinheiro)
+                    ]
+                ]
+            ],
             'transporte' => [
                 'frete' => $orderData['shipping'] ?? 0,
             ],
-            'desconto' => $orderData['discount'] ?? 0,
         ];
+
+        // Adicionar desconto se houver
+        if (!empty($orderData['discount']) && $orderData['discount'] > 0) {
+            $payload['desconto'] = [
+                'valor' => $orderData['discount']
+            ];
+        }
+
+        // Se o cliente tem ID no Bling, usar o ID. Senão, enviar dados completos
+        if (!empty($orderData['customer']['id'])) {
+            $payload['contato'] = [
+                'id' => $orderData['customer']['id']
+            ];
+        } else {
+            $payload['contato'] = [
+                'nome' => $orderData['customer']['name'],
+                'email' => $orderData['customer']['email'],
+                'telefone' => $orderData['customer']['phone'] ?? '',
+            ];
+        }
+
+        return $payload;
     }
 }

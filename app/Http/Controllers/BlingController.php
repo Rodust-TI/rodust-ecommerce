@@ -321,6 +321,98 @@ class BlingController extends Controller
     }
 
     /**
+     * API: Sincronizar detalhes completos de produtos (enfileirado)
+     * Busca lista de produtos e enfileira job para cada um com rate limiting
+     */
+    public function apiSyncProductsAdvanced(Request $request)
+    {
+        try {
+            $limit = $request->input('limit', 100);
+            $full = $request->boolean('full', false);
+            
+            // Buscar lista de produtos do Bling
+            $erp = app(\App\Contracts\ERPInterface::class);
+            $products = $erp->getProducts(['limite' => $limit]);
+            
+            \Illuminate\Support\Facades\Log::info('Bling - Produtos retornados:', [
+                'count' => count($products),
+                'sample' => array_slice($products, 0, 2) // Primeiros 2 para debug
+            ]);
+            
+            if (empty($products)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Nenhum produto encontrado no Bling'
+                ], 404);
+            }
+            
+            // Enfileirar cada produto com delay para respeitar rate limit
+            // Bling permite 3 req/s, então 1 job a cada ~350ms
+            $delaySeconds = 0;
+            $queued = 0;
+            
+            foreach ($products as $product) {
+                $blingId = $product['bling_id'] ?? $product['erp_id'] ?? null;
+                
+                if (!$blingId) {
+                    \Illuminate\Support\Facades\Log::warning('Bling - Produto sem ID:', $product);
+                    continue;
+                }
+                
+                // Enfileirar job com delay crescente
+                \App\Jobs\SyncProductDetailFromBling::dispatch($blingId)
+                    ->delay(now()->addMilliseconds($delaySeconds * 350));
+                
+                $delaySeconds++;
+                $queued++;
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Sincronização avançada iniciada',
+                'queued' => $queued,
+                'total_found' => count($products),
+                'estimated_time' => ceil($queued * 0.35) . ' segundos',
+                'note' => 'Jobs enfileirados respeitando limite de 3 req/s do Bling'
+            ]);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Erro na sincronização avançada', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * API: Sincronizar um produto específico pelo ID do Bling
+     */
+    public function apiSyncSingleProduct(Request $request, string $blingId)
+    {
+        try {
+            // Disparar job imediatamente (sem delay)
+            \App\Jobs\SyncProductDetailFromBling::dispatch($blingId);
+            
+            return response()->json([
+                'success' => true,
+                'message' => "Sincronização do produto {$blingId} enfileirada",
+                'bling_id' => $blingId
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * API: Sincronizar clientes para o Bling
      */
     public function apiSyncCustomers(Request $request)

@@ -66,6 +66,12 @@
                         <button onclick="syncProducts()" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">
                             🔄 Sincronizar Agora
                         </button>
+                        <button onclick="syncProductsAdvanced()" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium">
+                            ⚡ Sincronizar Detalhes Completos
+                        </button>
+                        <p class="text-xs text-gray-500 mt-2">
+                            💡 "Detalhes Completos" busca dimensões, peso, marca, imagens e mais. Pode demorar mais tempo.
+                        </p>
                     </div>
                 </div>
 
@@ -284,6 +290,57 @@
                         <div class="text-green-400 mb-2">✅ ${data.message}</div>
                         <div class="text-gray-400 text-xs space-y-1">
                             ${output.map(line => `<div>${line}</div>`).join('')}
+                        </div>
+                    `;
+                } else {
+                    contentEl.innerHTML = `<div class="text-red-400">❌ ${data.message || 'Erro ao sincronizar produtos'}</div>`;
+                }
+            } catch (error) {
+                contentEl.innerHTML = `<div class="text-red-400">❌ Erro: ${error.message}</div>`;
+            }
+        }
+
+        async function syncProductsAdvanced() {
+            const consoleEl = document.getElementById('console-output');
+            const contentEl = document.getElementById('console-content');
+            
+            if (!confirm('⚡ SINCRONIZAÇÃO COMPLETA DE DETALHES\n\n' +
+                'Esta operação irá:\n' +
+                '• Buscar a lista de todos os produtos\n' +
+                '• Enfileirar cada produto para busca detalhada\n' +
+                '• Obter dimensões, peso, marca, imagens e mais\n' +
+                '• Respeitar limite de 3 requisições/segundo do Bling\n\n' +
+                'Pode demorar vários minutos. Continuar?')) {
+                return;
+            }
+            
+            consoleEl.classList.remove('hidden');
+            contentEl.innerHTML = '<div class="text-purple-400 animate-pulse">⚡ Iniciando sincronização avançada...</div>';
+            
+            try {
+                const response = await fetch('/bling/api/sync-products-advanced', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                    },
+                    body: JSON.stringify({
+                        limit: 100,
+                        full: true
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    contentEl.innerHTML = `
+                        <div class="text-green-400 mb-2">✅ ${data.message}</div>
+                        <div class="text-purple-400 mb-2">📊 ${data.queued} produto(s) enfileirado(s)</div>
+                        <div class="text-yellow-400 text-xs">
+                            ⏱️ Processamento em background. Pode levar alguns minutos.
+                        </div>
+                        <div class="text-gray-400 text-xs mt-2">
+                            Os produtos serão processados respeitando o limite de 3 req/s do Bling.
                         </div>
                     `;
                 } else {

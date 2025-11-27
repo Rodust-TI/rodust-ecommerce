@@ -63,7 +63,10 @@ return [
     |
     */
 
-    'frontend_url' => env('APP_FRONTEND_URL', 'http://localhost/rodust.com.br/wordpress'),
+    'frontend_url' => env('APP_FRONTEND_URL', 'http://localhost:8080'),
+    
+    'wordpress_api_user' => env('WORDPRESS_API_USER', 'admin'),
+    'wordpress_api_password' => env('WORDPRESS_API_PASSWORD'),
 
     /*
     |--------------------------------------------------------------------------

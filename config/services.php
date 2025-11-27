@@ -47,4 +47,35 @@ return [
         'redirect_uri' => env('BLING_REDIRECT_URI', env('APP_URL') . '/bling/callback'),
     ],
 
+    'melhor_envio' => [
+        // Configurações gerais
+        'sandbox' => env('MELHOR_ENVIO_SANDBOX', true),
+        'origin_cep' => env('MELHOR_ENVIO_ORIGIN_CEP', '13400710'),
+        
+        // OAuth2 - Sandbox
+        'client_id_sandbox' => env('MELHOR_ENVIO_CLIENT_ID_SANDBOX', '7552'),
+        'client_secret_sandbox' => env('MELHOR_ENVIO_CLIENT_SECRET_SANDBOX'),
+        
+        // OAuth2 - Produção
+        'client_id_prod' => env('MELHOR_ENVIO_CLIENT_ID_PROD', '15782'),
+        'client_secret_prod' => env('MELHOR_ENVIO_CLIENT_SECRET_PROD'),
+        
+        // URLs
+        'sandbox_url' => 'https://sandbox.melhorenvio.com.br/api/v2',
+        'prod_url' => 'https://melhorenvio.com.br/api/v2',
+    ],
+
+    'wordpress' => [
+        'url' => env('WORDPRESS_URL', 'https://rodust.com.br'),
+        'api_user' => env('WORDPRESS_API_USER'),
+        'api_password' => env('WORDPRESS_API_PASSWORD'), // Application Password do WordPress
+    ],
+
+    'mercadopago' => [
+        'public_key' => env('MERCADOPAGO_PUBLIC_KEY'),
+        'access_token' => env('MERCADOPAGO_ACCESS_TOKEN'),
+        'sandbox' => env('MERCADOPAGO_SANDBOX', true),
+        'webhook_url' => env('MERCADOPAGO_WEBHOOK_URL'),
+    ],
+
 ];

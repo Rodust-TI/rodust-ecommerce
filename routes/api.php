@@ -7,6 +7,8 @@ use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\CustomerAddressController;
 use App\Http\Controllers\Api\WishlistController;
 use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\API\MelhorEnvioController;
+use App\Http\Controllers\API\PaymentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -35,8 +37,12 @@ Route::prefix('customers')->group(function () {
 // Produtos (para WordPress consumir)
 Route::prefix('products')->group(function () {
     Route::get('/', [ProductController::class, 'index']);
+    Route::get('/wordpress', [ProductController::class, 'wordpress']); // Endpoint completo para WordPress
     Route::get('/{id}', [ProductController::class, 'show']);
     Route::post('/sync-from-bling', [ProductController::class, 'syncFromBling']);
+    // Sincronização Laravel → WordPress
+    Route::post('/sync-to-wordpress', [ProductController::class, 'syncAllToWordPress']); // Todos
+    Route::post('/{id}/sync-to-wordpress', [ProductController::class, 'syncOneToWordPress']); // Individual
 });
 
 // Buscar CEP (público - para preencher formulário de endereço)
@@ -44,6 +50,21 @@ Route::get('addresses/search-zipcode/{zipcode}', [CustomerAddressController::cla
 
 // Webhook do Bling (recebe atualizações em tempo real)
 Route::post('webhooks/bling', [WebhookController::class, 'handle'])->name('webhooks.bling');
+
+// Melhor Envio - OAuth Callback (público)
+Route::get('melhor-envio/oauth/callback', [MelhorEnvioController::class, 'oauthCallback']);
+
+// Melhor Envio - Webhook (público)
+Route::post('melhor-envio/webhook', [MelhorEnvioController::class, 'webhook']);
+
+// Melhor Envio - Calculate Shipping (público - usado no checkout)
+Route::post('shipping/calculate', [MelhorEnvioController::class, 'calculateShipping']);
+
+// Mercado Pago - Public Key (público - usado no frontend)
+Route::get('payments/mercadopago/public-key', [PaymentController::class, 'getPublicKey']);
+
+// Mercado Pago - Webhook (público - recebe notificações de pagamento)
+Route::post('webhooks/mercadopago', [PaymentController::class, 'webhook']);
 
 // ========================================
 // ROTAS PROTEGIDAS (requerem autenticação)
@@ -64,7 +85,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/{id}', [CustomerAddressController::class, 'show']);
             Route::put('/{id}', [CustomerAddressController::class, 'update']);
             Route::delete('/{id}', [CustomerAddressController::class, 'destroy']);
-            Route::post('/{id}/set-default', [CustomerAddressController::class, 'setDefault']);
+            Route::post('/{id}/toggle-type', [CustomerAddressController::class, 'toggleType']);
         });
     });
     
@@ -74,6 +95,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [WishlistController::class, 'store']);
         Route::delete('/{productId}', [WishlistController::class, 'destroy']);
         Route::get('/check/{productId}', [WishlistController::class, 'check']);
+    });
+
+    // Pagamentos (criar pedido + processar pagamento)
+    Route::prefix('payments')->group(function () {
+        Route::post('/pix', [PaymentController::class, 'createPixPayment']);
+        Route::post('/boleto', [PaymentController::class, 'createBoletoPayment']);
+        Route::post('/card', [PaymentController::class, 'createCardPayment']);
     });
 
     // Criar pedido (checkout) - requer autenticação
@@ -92,6 +120,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [OrderController::class, 'index']);
         Route::put('/{id}', [OrderController::class, 'update']);
         Route::delete('/{id}', [OrderController::class, 'destroy']);
+    });
+
+    // Melhor Envio - Admin routes
+    Route::prefix('admin/melhor-envio')->group(function () {
+        Route::get('/settings', [MelhorEnvioController::class, 'getSettings']);
+        Route::post('/settings', [MelhorEnvioController::class, 'updateSettings']);
+        Route::get('/auth', [MelhorEnvioController::class, 'redirectToAuth']);
     });
 });
 

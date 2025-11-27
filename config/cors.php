@@ -24,12 +24,14 @@ return [
         'https://localhost',
         'http://localhost:8080',
         'https://localhost:8080',
+        'https://localhost:8443',  // WordPress HTTPS
         'http://localhost:3000',
         'https://localhost:3000',
         'http://127.0.0.1',
         'https://127.0.0.1',
         'http://127.0.0.1:8080',
         'https://127.0.0.1:8080',
+        'https://127.0.0.1:8443',
     ],
 
     'allowed_origins_patterns' => [],

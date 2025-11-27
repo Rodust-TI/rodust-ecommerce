@@ -243,23 +243,44 @@ class BlingCustomerService
             'contribuinte' => $contribuinte,
         ];
 
-        // Adicionar endereço se existir OU se for PJ (obrigatório no Bling)
-        $mainAddress = $customer->addresses()->where('is_default', true)->first() 
-                    ?? $customer->addresses()->first();
+        // Adicionar endereços se existirem
+        $shippingAddress = $customer->addresses()->where('is_shipping', true)->first();
+        $billingAddress = $customer->addresses()->where('is_billing', true)->first();
+        
+        // Se não houver endereços tipados, usar o primeiro disponível para geral
+        $fallbackAddress = $shippingAddress ?? $customer->addresses()->first();
 
-        if ($mainAddress || $tipoPessoa === 'J') {
-            $payload['endereco'] = [
-                'geral' => [
-                    'endereco' => $mainAddress?->street ?? '',
-                    'numero' => $mainAddress?->number ?? '',
-                    'complemento' => $mainAddress?->complement ?? '',
-                    'bairro' => $mainAddress?->neighborhood ?? '',
-                    'cep' => $mainAddress?->zipcode ? preg_replace('/\D/', '', $mainAddress->zipcode) : '',
-                    'municipio' => $mainAddress?->city ?? '',
-                    'uf' => $mainAddress?->state ?? $customer->state_uf ?? 'SP', // Usa state_uf ou default SP
+        if ($shippingAddress || $billingAddress || $fallbackAddress || $tipoPessoa === 'J') {
+            $payload['endereco'] = [];
+            
+            // Endereço geral (shipping ou fallback)
+            $geralAddress = $shippingAddress ?? $fallbackAddress;
+            if ($geralAddress || $tipoPessoa === 'J') {
+                $payload['endereco']['geral'] = [
+                    'endereco' => $geralAddress?->address ?? '',
+                    'numero' => $geralAddress?->number ?? '',
+                    'complemento' => $geralAddress?->complement ?? '',
+                    'bairro' => $geralAddress?->neighborhood ?? '',
+                    'cep' => $geralAddress?->zipcode ? preg_replace('/\D/', '', $geralAddress->zipcode) : '',
+                    'municipio' => $geralAddress?->city ?? '',
+                    'uf' => $geralAddress?->state ?? $customer->state_uf ?? 'SP',
                     'pais' => 'Brasil',
-                ]
-            ];
+                ];
+            }
+            
+            // Endereço de cobrança (billing)
+            if ($billingAddress) {
+                $payload['endereco']['cobranca'] = [
+                    'endereco' => $billingAddress->address,
+                    'numero' => $billingAddress->number,
+                    'complemento' => $billingAddress->complement ?? '',
+                    'bairro' => $billingAddress->neighborhood,
+                    'cep' => preg_replace('/\D/', '', $billingAddress->zipcode),
+                    'municipio' => $billingAddress->city,
+                    'uf' => $billingAddress->state,
+                    'pais' => 'Brasil',
+                ];
+            }
         }
 
         // Adicionar tipo de contato e observações
@@ -281,6 +302,99 @@ class BlingCustomerService
         return array_filter($payload, function($value) {
             return $value !== null && $value !== '';
         });
+    }
+
+    /**
+     * Sync customer addresses to Bling
+     * Updates shipping address (geral) and billing address (cobranca)
+     * 
+     * @param Customer $customer
+     * @return bool
+     */
+    public function syncAddresses(Customer $customer): bool
+    {
+        $token = $this->getAccessToken();
+        
+        if (!$token) {
+            Log::error('Cannot sync addresses to Bling: no access token', [
+                'customer_id' => $customer->id
+            ]);
+            return false;
+        }
+
+        if (!$customer->bling_id) {
+            Log::warning('Cannot sync addresses: customer not synced to Bling yet', [
+                'customer_id' => $customer->id
+            ]);
+            return false;
+        }
+
+        try {
+            // Verificar se há endereços para sincronizar
+            $shippingAddress = $customer->addresses()->where('is_shipping', true)->first();
+            $billingAddress = $customer->addresses()->where('is_billing', true)->first();
+
+            if (!$shippingAddress && !$billingAddress) {
+                Log::info('No shipping or billing addresses to sync', [
+                    'customer_id' => $customer->id
+                ]);
+                return true; // Não é erro, apenas não há o que sincronizar
+            }
+
+            // PUT no Bling sobrescreve tudo, então enviamos o payload completo do cliente
+            // O prepareCustomerPayload já inclui os endereços shipping/billing atualizados
+            $payload = $this->prepareCustomerPayload($customer);
+
+            // Log do payload que será enviado
+            Log::info('Sending full customer payload with addresses to Bling', [
+                'customer_id' => $customer->id,
+                'bling_id' => $customer->bling_id,
+                'payload' => $payload,
+                'url' => "{$this->baseUrl}/contatos/{$customer->bling_id}"
+            ]);
+
+            // Atualizar cliente no Bling com os endereços
+            $response = Http::withToken($token)
+                ->timeout(30)
+                ->put("{$this->baseUrl}/contatos/{$customer->bling_id}", $payload);
+
+            // Log da resposta completa
+            Log::info('Bling API response for address sync', [
+                'customer_id' => $customer->id,
+                'bling_id' => $customer->bling_id,
+                'status_code' => $response->status(),
+                'response_body' => $response->json(),
+                'response_headers' => $response->headers()
+            ]);
+
+            if ($response->successful()) {
+                Log::info('Addresses synced to Bling successfully', [
+                    'customer_id' => $customer->id,
+                    'bling_id' => $customer->bling_id,
+                    'has_shipping' => (bool) $shippingAddress,
+                    'has_billing' => (bool) $billingAddress,
+                ]);
+                return true;
+            }
+
+            Log::error('Failed to sync addresses to Bling', [
+                'customer_id' => $customer->id,
+                'bling_id' => $customer->bling_id,
+                'status' => $response->status(),
+                'response' => $response->json()
+            ]);
+            
+            return false;
+
+        } catch (\Exception $e) {
+            Log::error('Exception syncing addresses to Bling', [
+                'customer_id' => $customer->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return false;
+        }
     }
 
     /**

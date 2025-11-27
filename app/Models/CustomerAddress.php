@@ -11,7 +11,9 @@ class CustomerAddress extends Model
 
     protected $fillable = [
         'customer_id',
-        'type',
+        'type', // Mantido para compatibilidade (deprecated)
+        'is_shipping', // Endereço de entrega
+        'is_billing', // Endereço de cobrança
         'label',
         'recipient_name',
         'zipcode',
@@ -22,15 +24,11 @@ class CustomerAddress extends Model
         'city',
         'state',
         'country',
-        'invoice_cpf_cnpj',
-        'invoice_name',
-        'invoice_ie',
-        'invoice_im',
-        'is_default',
     ];
 
     protected $casts = [
-        'is_default' => 'boolean',
+        'is_shipping' => 'boolean',
+        'is_billing' => 'boolean',
     ];
 
     /**
@@ -42,16 +40,26 @@ class CustomerAddress extends Model
     }
 
     /**
-     * Ao salvar um endereço como padrão, remove o padrão dos outros do mesmo tipo
+     * Ao definir um endereço como shipping ou billing, remove dos outros
+     * Apenas um endereço pode ser shipping e apenas um pode ser billing
      */
     protected static function booted()
     {
         static::saving(function ($address) {
-            if ($address->is_default) {
+            // Se está definindo como shipping, remove shipping dos outros
+            if ($address->is_shipping && $address->isDirty('is_shipping')) {
                 static::where('customer_id', $address->customer_id)
-                    ->where('type', $address->type)
+                    ->where('is_shipping', true)
                     ->where('id', '!=', $address->id ?? 0)
-                    ->update(['is_default' => false]);
+                    ->update(['is_shipping' => false]);
+            }
+            
+            // Se está definindo como billing, remove billing dos outros
+            if ($address->is_billing && $address->isDirty('is_billing')) {
+                static::where('customer_id', $address->customer_id)
+                    ->where('is_billing', true)
+                    ->where('id', '!=', $address->id ?? 0)
+                    ->update(['is_billing' => false]);
             }
         });
     }

@@ -24,6 +24,38 @@ services:
         depends_on:
             - mysql
             - redis
+    
+    wordpress:
+        image: 'wordpress:latest'
+        ports:
+            - '${WP_PORT:-8080}:80'
+            - '${WP_SSL_PORT:-8443}:443'
+        environment:
+            WORDPRESS_DB_HOST: 'mysql:3306'
+            WORDPRESS_DB_USER: '${DB_USERNAME}'
+            WORDPRESS_DB_PASSWORD: '${DB_PASSWORD}'
+            WORDPRESS_DB_NAME: '${WP_DB_NAME:-wordpress}'
+            WORDPRESS_TABLE_PREFIX: 'wp_'
+            WORDPRESS_DEBUG: 'true'
+            # Força HTTPS no admin (para Application Passwords)
+            WORDPRESS_CONFIG_EXTRA: |
+                define('FORCE_SSL_ADMIN', true);
+                if (isset($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+                    $$_SERVER['HTTPS'] = 'on';
+                }
+        volumes:
+            - '../wordpress:/var/www/html'
+            - './docker/wordpress/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini'
+            - './docker/wordpress/ssl:/etc/apache2/ssl'
+        networks:
+            - sail
+        depends_on:
+            - mysql
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost/wp-admin/install.php"]
+            interval: 30s
+            timeout: 10s
+            retries: 5
     mysql:
         image: 'mysql:8.0'
         command: ["--default-authentication-plugin=mysql_native_password"]
@@ -31,11 +63,10 @@ services:
             - '${FORWARD_DB_PORT:-3306}:3306'
         environment:
             MYSQL_ROOT_PASSWORD: '${DB_PASSWORD}'
-            MYSQL_DATABASE: '${DB_DATABASE}'
-            MYSQL_USER: '${DB_USERNAME}'
-            MYSQL_PASSWORD: '${DB_PASSWORD}'
+            MYSQL_ROOT_HOST: '%'
         volumes:
             - 'sail-mysql:/var/lib/mysql'
+            - './docker/mysql/init:/docker-entrypoint-initdb.d'
         networks:
             - sail
         healthcheck:
