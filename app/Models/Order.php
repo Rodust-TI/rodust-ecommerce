@@ -20,6 +20,8 @@ class Order extends Model
         'payment_method',
         'payment_status',
         'payment_id',
+        'shipping_address',
+        'shipping_method_name',
         'notes',
         'bling_id',
         'bling_order_id',
@@ -37,10 +39,31 @@ class Order extends Model
         'discount' => 'decimal:2',
         'shipping' => 'decimal:2',
         'total' => 'decimal:2',
+        'shipping_address' => 'array',
         'bling_synced_at' => 'datetime',
         'invoice_issued_at' => 'datetime',
         'last_bling_sync' => 'datetime',
     ];
+    
+    /**
+     * Acessores para compatibilidade com frontend
+     */
+    protected $appends = ['subtotal_amount', 'shipping_cost', 'total_amount'];
+    
+    public function getSubtotalAmountAttribute()
+    {
+        return $this->subtotal;
+    }
+    
+    public function getShippingCostAttribute()
+    {
+        return $this->shipping;
+    }
+    
+    public function getTotalAmountAttribute()
+    {
+        return $this->total;
+    }
 
     /**
      * Relação com Customer

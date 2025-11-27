@@ -40,6 +40,8 @@ class OrderCreationService
             'subtotal' => $subtotal,
             'shipping' => $shippingCost,
             'total' => $total,
+            'shipping_address' => $request->shipping_address,
+            'shipping_method_name' => $request->shipping_method['name'] ?? null,
             'notes' => $this->formatShippingAddressNotes($request->shipping_address),
         ]);
 

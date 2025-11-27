@@ -145,7 +145,11 @@ class OrderController extends Controller
     public function show(string $id)
     {
         $order = Order::with(['customer', 'items.product'])->findOrFail($id);
-        return response()->json($order);
+        
+        return response()->json([
+            'success' => true,
+            'data' => $order
+        ]);
     }
 
     /**
