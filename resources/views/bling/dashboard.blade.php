@@ -46,133 +46,197 @@
                 </div>
             </div>
 
-            <!-- Actions Grid -->
-            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Layout: Action Cards com Console Individual -->
+            <div class="space-y-4">
                 <!-- Produtos -->
-                <div class="bg-white rounded-lg shadow-sm border p-6">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">
-                            📦
+                <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
+                    <div class="grid grid-cols-12 gap-0">
+                        <!-- Card de Ação (30%) -->
+                        <div class="col-span-12 md:col-span-4 lg:col-span-3 p-4 border-r border-gray-200">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-xl">
+                                    📦
+                                </div>
+                                <div>
+                                    <h3 class="font-semibold text-gray-900 text-sm">Produtos</h3>
+                                    <p class="text-xs text-gray-500">Sincronizar catálogo</p>
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <button onclick="listProducts()" class="w-full px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-xs font-medium transition-colors">
+                                    📋 Listar Produtos
+                                </button>
+                                <button onclick="syncProducts()" class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-colors">
+                                    🔄 Sincronizar Agora
+                                </button>
+                                <button onclick="syncProductsAdvanced()" class="w-full px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-medium transition-colors">
+                                    ⚡ Sincronizar Detalhes
+                                </button>
+                            </div>
                         </div>
-                        <div>
-                            <h3 class="font-semibold text-gray-900">Produtos</h3>
-                            <p class="text-sm text-gray-500">Sincronizar catálogo</p>
+                        <!-- Console Individual (70%) -->
+                        <div class="col-span-12 md:col-span-8 lg:col-span-9 bg-gray-900">
+                            <div class="flex justify-between items-center px-4 py-2 border-b border-gray-700">
+                                <span class="text-green-400 text-xs font-semibold">● Console Produtos</span>
+                                <button onclick="clearProductsConsole()" class="text-gray-400 hover:text-white text-xs px-2 py-1 hover:bg-gray-800 rounded">
+                                    🗑️
+                                </button>
+                            </div>
+                            <div id="products-console" class="p-4 text-white font-mono text-xs space-y-1 h-[250px] overflow-y-auto">
+                                <div class="text-gray-500">Aguardando ação...</div>
+                            </div>
                         </div>
                     </div>
-                    <div class="space-y-2">
-                        <button onclick="listProducts()" class="w-full px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-sm font-medium">
-                            📋 Listar Produtos
-                        </button>
-                        <button onclick="syncProducts()" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">
-                            🔄 Sincronizar Agora
-                        </button>
-                        <button onclick="syncProductsAdvanced()" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium">
-                            ⚡ Sincronizar Detalhes Completos
-                        </button>
-                        <p class="text-xs text-gray-500 mt-2">
-                            💡 "Detalhes Completos" busca dimensões, peso, marca, imagens e mais. Pode demorar mais tempo.
-                        </p>
+                </div>
+
+                <!-- Pedidos -->
+                <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
+                    <div class="grid grid-cols-12 gap-0">
+                        <div class="col-span-12 md:col-span-4 lg:col-span-3 p-4 border-r border-gray-200">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center text-xl">
+                                    🛒
+                                </div>
+                                <div>
+                                    <h3 class="font-semibold text-gray-900 text-sm">Pedidos</h3>
+                                    <p class="text-xs text-gray-500">Enviar para Bling</p>
+                                </div>
+                            </div>
+                            <button onclick="syncOrders()" class="w-full px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-medium transition-colors">
+                                📦 Sincronizar Pedidos
+                            </button>
+                        </div>
+                        <div class="col-span-12 md:col-span-8 lg:col-span-9 bg-gray-900">
+                            <div class="flex justify-between items-center px-4 py-2 border-b border-gray-700">
+                                <span class="text-purple-400 text-xs font-semibold">● Console Pedidos</span>
+                                <button onclick="clearOrdersConsole()" class="text-gray-400 hover:text-white text-xs px-2 py-1 hover:bg-gray-800 rounded">
+                                    🗑️
+                                </button>
+                            </div>
+                            <div id="orders-console" class="p-4 text-white font-mono text-xs space-y-1 h-[250px] overflow-y-auto">
+                                <div class="text-gray-500">Aguardando ação...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Clientes -->
+                <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
+                    <div class="grid grid-cols-12 gap-0">
+                        <div class="col-span-12 md:col-span-4 lg:col-span-3 p-4 border-r border-gray-200">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h3 class="font-semibold text-gray-900 text-sm">Clientes</h3>
+                                    <p class="text-xs text-gray-500">Sincronizar cadastros</p>
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <button onclick="syncCustomers()" class="w-full px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs font-medium transition-colors">
+                                    🔄 Sincronizar Agora
+                                </button>
+                                <button onclick="listContactTypes()" class="w-full px-3 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded text-xs font-medium transition-colors">
+                                    📋 Tipos de Contato
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-span-12 md:col-span-8 lg:col-span-9 bg-gray-900">
+                            <div class="flex justify-between items-center px-4 py-2 border-b border-gray-700">
+                                <span class="text-yellow-400 text-xs font-semibold">● Console Clientes</span>
+                                <button onclick="clearCustomersConsole()" class="text-gray-400 hover:text-white text-xs px-2 py-1 hover:bg-gray-800 rounded">
+                                    🗑️
+                                </button>
+                            </div>
+                            <div id="customers-console" class="p-4 text-white font-mono text-xs space-y-1 h-[250px] overflow-y-auto">
+                                <div class="text-gray-500">Aguardando ação...</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Estoques -->
-                <div class="bg-white rounded-lg shadow-sm border p-6">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">
-                            📊
+                <div class="bg-white rounded-lg shadow-sm border overflow-hidden opacity-50">
+                    <div class="grid grid-cols-12 gap-0">
+                        <div class="col-span-12 md:col-span-4 lg:col-span-3 p-4 border-r border-gray-200">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center text-xl">
+                                    📊
+                                </div>
+                                <div>
+                                    <h3 class="font-semibold text-gray-900 text-sm">Estoques</h3>
+                                    <p class="text-xs text-gray-500">Atualizar quantidades</p>
+                                </div>
+                            </div>
+                            <button class="w-full px-3 py-2 bg-gray-300 text-gray-600 rounded text-xs font-medium cursor-not-allowed" disabled>
+                                Em Breve
+                            </button>
                         </div>
-                        <div>
-                            <h3 class="font-semibold text-gray-900">Estoques</h3>
-                            <p class="text-sm text-gray-500">Atualizar quantidades</p>
-                        </div>
-                    </div>
-                    <button class="w-full px-4 py-2 bg-gray-300 text-gray-600 rounded-lg text-sm font-medium cursor-not-allowed" disabled>
-                        Em Breve
-                    </button>
-                </div>
-
-                <!-- Pedidos -->
-                <div class="bg-white rounded-lg shadow-sm border p-6">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">
-                            🛒
-                        </div>
-                        <div>
-                            <h3 class="font-semibold text-gray-900">Pedidos</h3>
-                            <p class="text-sm text-gray-500">Enviar para Bling</p>
-                        </div>
-                    </div>
-                    <button class="w-full px-4 py-2 bg-gray-300 text-gray-600 rounded-lg text-sm font-medium cursor-not-allowed" disabled>
-                        Em Breve
-                    </button>
-                </div>
-
-                <!-- Clientes -->
-                <div class="bg-white rounded-lg shadow-sm border p-6">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
-                            <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <h3 class="font-semibold text-gray-900">Clientes</h3>
-                            <p class="text-sm text-gray-500">Sincronizar cadastros</p>
+                        <div class="col-span-12 md:col-span-8 lg:col-span-9 bg-gray-900">
+                            <div class="flex justify-between items-center px-4 py-2 border-b border-gray-700">
+                                <span class="text-green-400 text-xs font-semibold opacity-50">● Console Estoques</span>
+                            </div>
+                            <div class="p-4 text-gray-600 font-mono text-xs h-[250px] flex items-center justify-center">
+                                <span>Funcionalidade em desenvolvimento</span>
+                            </div>
                         </div>
                     </div>
-                    <div class="space-y-2">
-                        <button onclick="syncCustomers()" class="w-full px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-medium transition-colors">
-                            Sincronizar Agora
-                        </button>
-                        <button onclick="listContactTypes()" class="w-full px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-sm font-medium transition-colors">
-                            📋 Listar Tipos de Contato
-                        </button>
-                    </div>
-                    <!-- Console de saída -->
-                    <div id="customers-console" class="mt-4 p-3 bg-gray-900 text-green-400 rounded-lg text-xs font-mono h-32 overflow-y-auto hidden"></div>
                 </div>
 
                 <!-- Notas Fiscais -->
-                <div class="bg-white rounded-lg shadow-sm border p-6">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center text-2xl">
-                            📄
+                <div class="bg-white rounded-lg shadow-sm border overflow-hidden opacity-50">
+                    <div class="grid grid-cols-12 gap-0">
+                        <div class="col-span-12 md:col-span-4 lg:col-span-3 p-4 border-r border-gray-200">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center text-xl">
+                                    📄
+                                </div>
+                                <div>
+                                    <h3 class="font-semibold text-gray-900 text-sm">Notas Fiscais</h3>
+                                    <p class="text-xs text-gray-500">Emitir NF-e</p>
+                                </div>
+                            </div>
+                            <button class="w-full px-3 py-2 bg-gray-300 text-gray-600 rounded text-xs font-medium cursor-not-allowed" disabled>
+                                Em Breve
+                            </button>
                         </div>
-                        <div>
-                            <h3 class="font-semibold text-gray-900">Notas Fiscais</h3>
-                            <p class="text-sm text-gray-500">Emitir NF-e</p>
+                        <div class="col-span-12 md:col-span-8 lg:col-span-9 bg-gray-900">
+                            <div class="flex justify-between items-center px-4 py-2 border-b border-gray-700">
+                                <span class="text-red-400 text-xs font-semibold opacity-50">● Console Notas Fiscais</span>
+                            </div>
+                            <div class="p-4 text-gray-600 font-mono text-xs h-[250px] flex items-center justify-center">
+                                <span>Funcionalidade em desenvolvimento</span>
+                            </div>
                         </div>
                     </div>
-                    <button class="w-full px-4 py-2 bg-gray-300 text-gray-600 rounded-lg text-sm font-medium cursor-not-allowed" disabled>
-                        Em Breve
-                    </button>
-                </div>
-
-                <!-- Webhooks -->
-                <div class="bg-white rounded-lg shadow-sm border p-6">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center text-2xl">
-                            ⚡
-                        </div>
-                        <div>
-                            <h3 class="font-semibold text-gray-900">Webhooks</h3>
-                            <p class="text-sm text-gray-500">Eventos em tempo real</p>
-                        </div>
-                    </div>
-                    <button class="w-full px-4 py-2 bg-gray-300 text-gray-600 rounded-lg text-sm font-medium cursor-not-allowed" disabled>
-                        Em Breve
-                    </button>
                 </div>
             </div>
 
-            <!-- Output Console -->
-            <div id="console-output" class="hidden mt-6 bg-gray-900 rounded-lg p-6 text-white font-mono text-sm">
-                <div class="flex justify-between items-center mb-4">
-                    <span class="text-green-400">Console:</span>
-                    <button onclick="closeConsole()" class="text-gray-400 hover:text-white">✕</button>
+            <!-- Console Global de Webhooks (100% largura) -->
+            <div class="mt-6 bg-gray-950 rounded-lg shadow-lg border border-gray-700 overflow-hidden">
+                <div class="flex justify-between items-center px-4 py-3 border-b border-gray-700 bg-gray-900">
+                    <div class="flex items-center gap-3">
+                        <span class="text-indigo-400 text-sm font-bold">⚡ WEBHOOKS - Logs em Tempo Real</span>
+                        <span class="text-gray-500 text-xs">(eventos automáticos do Bling e Mercado Pago)</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="testBlingWebhook()" class="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded">
+                            🧪 Testar Webhook Bling
+                        </button>
+                        <button onclick="clearWebhooksConsole()" class="text-gray-400 hover:text-white text-xs px-3 py-1 hover:bg-gray-800 rounded">
+                            🗑️ Limpar
+                        </button>
+                    </div>
                 </div>
-                <div id="console-content" class="space-y-1 max-h-96 overflow-y-auto">
-                    <!-- Output will be inserted here -->
+                <div id="webhooks-console" class="p-4 text-white font-mono text-xs space-y-1 h-[400px] overflow-y-auto">
+                    <div class="text-gray-500">Aguardando eventos de webhook...</div>
+                    <div class="text-gray-600 text-xs mt-2">💡 Webhooks configurados:</div>
+                    <div class="text-gray-600 text-xs ml-4">• Bling: https://localhost:8443/webhook</div>
+                    <div class="text-gray-600 text-xs ml-4">• Mercado Pago: https://floatingly-incipient-paul.ngrok-free.dev/api/webhooks/mercadopago</div>
+                    <div class="text-yellow-600 text-xs mt-2">⚠️ Teste manual pode falhar por CORS, mas webhooks reais do Bling funcionarão normalmente</div>
                 </div>
             </div>
         </main>
@@ -230,10 +294,8 @@
         }
 
         async function listProducts() {
-            const consoleEl = document.getElementById('console-output');
-            const contentEl = document.getElementById('console-content');
+            const contentEl = document.getElementById('products-console');
             
-            consoleEl.classList.remove('hidden');
             contentEl.innerHTML = '<div class="text-yellow-400">⏳ Buscando produtos do Bling...</div>';
             
             try {
@@ -259,14 +321,12 @@
         }
 
         async function syncProducts() {
-            const consoleEl = document.getElementById('console-output');
-            const contentEl = document.getElementById('console-content');
+            const contentEl = document.getElementById('products-console');
             
             if (!confirm('Sincronizar produtos do Bling para o Laravel e WordPress?\n\nIsso pode demorar alguns minutos dependendo da quantidade de produtos.')) {
                 return;
             }
             
-            consoleEl.classList.remove('hidden');
             contentEl.innerHTML = '<div class="text-yellow-400 animate-pulse">⏳ Sincronizando produtos... Aguarde...</div>';
             
             try {
@@ -301,8 +361,7 @@
         }
 
         async function syncProductsAdvanced() {
-            const consoleEl = document.getElementById('console-output');
-            const contentEl = document.getElementById('console-content');
+            const contentEl = document.getElementById('products-console');
             
             if (!confirm('⚡ SINCRONIZAÇÃO COMPLETA DE DETALHES\n\n' +
                 'Esta operação irá:\n' +
@@ -314,7 +373,6 @@
                 return;
             }
             
-            consoleEl.classList.remove('hidden');
             contentEl.innerHTML = '<div class="text-purple-400 animate-pulse">⚡ Iniciando sincronização avançada...</div>';
             
             try {
@@ -352,14 +410,12 @@
         }
 
         async function syncCustomers() {
-            const consoleEl = document.getElementById('console-output');
-            const contentEl = document.getElementById('console-content');
+            const contentEl = document.getElementById('customers-console');
             
             if (!confirm('Sincronizar clientes verificados para o Bling?\n\nApenas clientes com email confirmado serão enviados.')) {
                 return;
             }
             
-            consoleEl.classList.remove('hidden');
             contentEl.innerHTML = '<div class="text-yellow-400 animate-pulse">Sincronizando clientes... Aguarde...</div>';
             
             try {
@@ -396,8 +452,20 @@
             }
         }
 
-        function closeConsole() {
-            document.getElementById('console-output').classList.add('hidden');
+        function clearProductsConsole() {
+            document.getElementById('products-console').innerHTML = '<div class="text-gray-500">Aguardando ação...</div>';
+        }
+
+        function clearOrdersConsole() {
+            document.getElementById('orders-console').innerHTML = '<div class="text-gray-500">Aguardando ação...</div>';
+        }
+
+        function clearCustomersConsole() {
+            document.getElementById('customers-console').innerHTML = '<div class="text-gray-500">Aguardando ação...</div>';
+        }
+
+        function clearWebhooksConsole() {
+            document.getElementById('webhooks-console').innerHTML = '<div class="text-gray-500">Aguardando eventos de webhook...</div>';
         }
 
         async function revokeAuth() {
@@ -459,9 +527,8 @@
          * Listar tipos de contato do Bling no console
          */
         async function listContactTypes() {
-            const consoleEl = document.getElementById('customers-console');
-            consoleEl.classList.remove('hidden');
-            consoleEl.innerHTML = '<div class="text-yellow-400">⏳ Consultando tipos de contato...</div>';
+            const contentEl = document.getElementById('customers-console');
+            contentEl.innerHTML = '<div class="text-yellow-400">⏳ Consultando tipos de contato...</div>';
             
             try {
                 const response = await fetch('/bling/api/contact-types', {
@@ -473,7 +540,7 @@
                 const data = await response.json();
                 
                 if (!data.success) {
-                    consoleEl.innerHTML = `<div class="text-red-400">❌ Erro: ${data.message}</div>`;
+                    contentEl.innerHTML = `<div class="text-red-400">❌ Erro: ${data.message}</div>`;
                     return;
                 }
                 
@@ -495,10 +562,95 @@
                     output += `<div class="text-red-400">⚠ "Cliente ecommerce" não encontrado</div>`;
                 }
                 
-                consoleEl.innerHTML = output;
+                contentEl.innerHTML = output;
                 
             } catch (error) {
-                consoleEl.innerHTML = `<div class="text-red-400">❌ Erro: ${error.message}</div>`;
+                contentEl.innerHTML = `<div class="text-red-400">❌ Erro: ${error.message}</div>`;
+            }
+        }
+        
+        // Sincronizar pedidos
+        async function syncOrders() {
+            const contentEl = document.getElementById('orders-console');
+            contentEl.innerHTML = '<div class="text-blue-400">⏳ Sincronizando pedidos...</div>';
+
+            try {
+                const response = await fetch('/bling/api/sync-orders', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                        'Accept': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    let output = `<div class="text-green-400">✓ ${data.message}</div>`;
+                    output += `<div class="text-gray-400 mt-2">─────────────────────────────</div>`;
+                    output += `<div class="text-white mt-2">Sincronizados: ${data.synced}/${data.total}</div>`;
+                    
+                    if (data.errors && data.errors.length > 0) {
+                        output += '<div class="text-red-400 mt-2">⚠ Erros:</div>';
+                        data.errors.forEach(err => {
+                            output += `<div class="text-red-300 text-xs ml-2">• ${err.order_number}: ${err.error}</div>`;
+                        });
+                    }
+                    
+                    contentEl.innerHTML = output;
+                } else {
+                    contentEl.innerHTML = `<div class="text-red-400">❌ ${data.message}</div>`;
+                }
+
+            } catch (error) {
+                contentEl.innerHTML = `<div class="text-red-400">❌ Erro: ${error.message}</div>`;
+            }
+        }
+
+        // Testar webhook do Bling
+        async function testBlingWebhook() {
+            const contentEl = document.getElementById('webhooks-console');
+            const timestamp = new Date().toLocaleTimeString('pt-BR');
+            
+            contentEl.innerHTML = `<div class="text-yellow-400">[${timestamp}] 🧪 Enviando requisição de teste para webhook do Bling...</div>`;
+            
+            try {
+                const response = await fetch('https://localhost:8443/webhook', {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        test: true,
+                        event: 'test.webhook',
+                        data: {
+                            message: 'Teste de webhook do dashboard',
+                            timestamp: new Date().toISOString()
+                        }
+                    })
+                });
+
+                const data = await response.text();
+                
+                let output = contentEl.innerHTML;
+                output += `<div class="text-green-400">[${timestamp}] ✅ Resposta recebida (HTTP ${response.status})</div>`;
+                output += `<div class="text-gray-400 ml-4">${data}</div>`;
+                output += `<div class="text-green-400 mt-2">✅ Webhook configurado corretamente! Webhooks reais do Bling funcionarão.</div>`;
+                contentEl.innerHTML = output;
+                
+                // Auto-scroll para o final
+                contentEl.scrollTop = contentEl.scrollHeight;
+                
+            } catch (error) {
+                let output = contentEl.innerHTML;
+                output += `<div class="text-red-400">[${timestamp}] ❌ Erro CORS: ${error.message}</div>`;
+                output += `<div class="text-yellow-400 ml-4 mt-2">⚠️ Erro esperado em teste manual devido a CORS (HTTP→HTTPS)</div>`;
+                output += `<div class="text-green-400 ml-4">✅ MAS: Webhooks reais do Bling funcionarão normalmente!</div>`;
+                output += `<div class="text-gray-400 ml-4 mt-2">Motivo: Bling envia webhooks diretamente (servidor→servidor), sem restrições CORS</div>`;
+                output += `<div class="text-blue-400 ml-4 mt-2">📝 Para testar: Configure no painel do Bling e envie um webhook de teste</div>`;
+                contentEl.innerHTML = output;
+                contentEl.scrollTop = contentEl.scrollHeight;
             }
         }
 

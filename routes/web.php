@@ -22,5 +22,6 @@ Route::prefix('bling')->group(function () {
     Route::post('/api/sync-products-advanced', [BlingController::class, 'apiSyncProductsAdvanced'])->name('bling.api.sync-products-advanced');
     Route::post('/api/sync-product/{blingId}', [BlingController::class, 'apiSyncSingleProduct'])->name('bling.api.sync-single-product');
     Route::post('/api/sync-customers', [BlingController::class, 'apiSyncCustomers'])->name('bling.api.sync-customers');
+    Route::post('/api/sync-orders', [BlingController::class, 'apiSyncOrders'])->name('bling.api.sync-orders');
     Route::get('/api/contact-types', [BlingController::class, 'apiListContactTypes'])->name('bling.api.contact-types');
 });

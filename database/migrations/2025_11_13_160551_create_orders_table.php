@@ -23,14 +23,12 @@ return new class extends Migration
             $table->string('payment_method')->nullable();
             $table->string('payment_status')->nullable();
             $table->text('notes')->nullable();
-            $table->string('bling_id')->nullable()->unique();
             $table->timestamp('bling_synced_at')->nullable();
             $table->timestamps();
             $table->softDeletes();
             
             $table->index('order_number');
             $table->index('status');
-            $table->index('bling_id');
             $table->index('customer_id');
         });
     }

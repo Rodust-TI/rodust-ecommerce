@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Integration;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
@@ -97,7 +98,21 @@ class BlingController extends Controller
 
             $data = $response->json();
 
-            // Salvar tokens no cache (Redis)
+            // Salvar tokens no banco E cache
+            $expiresAt = now()->addSeconds($data['expires_in']);
+            
+            Integration::updateOrCreate(
+                ['service' => 'bling'],
+                [
+                    'access_token' => $data['access_token'],
+                    'refresh_token' => $data['refresh_token'],
+                    'token_expires_at' => $expiresAt,
+                    'is_active' => true,
+                    'last_sync_at' => now(),
+                ]
+            );
+            
+            // Manter cache para performance
             Cache::put('bling_access_token', $data['access_token'], now()->addSeconds($data['expires_in'] - 60));
             Cache::put('bling_refresh_token', $data['refresh_token'], now()->addDays(30));
 
@@ -227,10 +242,29 @@ class BlingController extends Controller
 
             $data = $response->json();
 
-            // Salvar novos tokens
-            Cache::put('bling_access_token', $data['access_token'], now()->addSeconds($data['expires_in'] - 60));
+            // Salvar novos tokens no banco E cache
+            $expiresAt = now()->addSeconds($data['expires_in']);
+            
+            $updateData = [
+                'access_token' => $data['access_token'],
+                'token_expires_at' => $expiresAt,
+                'is_active' => true,
+                'last_sync_at' => now(),
+            ];
             
             // Atualizar refresh token se vier um novo
+            if (isset($data['refresh_token'])) {
+                $updateData['refresh_token'] = $data['refresh_token'];
+            }
+            
+            Integration::updateOrCreate(
+                ['service' => 'bling'],
+                $updateData
+            );
+            
+            // Manter cache para performance
+            Cache::put('bling_access_token', $data['access_token'], now()->addSeconds($data['expires_in'] - 60));
+            
             if (isset($data['refresh_token'])) {
                 Cache::put('bling_refresh_token', $data['refresh_token'], now()->addDays(30));
             }
@@ -494,6 +528,107 @@ class BlingController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * API: Sincronizar pedidos Laravel → Bling
+     * Envia pedidos pendentes de sincronização para o Bling
+     */
+    public function apiSyncOrders(Request $request)
+    {
+        try {
+            $limit = $request->input('limit', 50);
+            $orderId = $request->input('order_id'); // ID específico (opcional)
+            
+            // Se tem order_id específico, sincronizar só ele
+            if ($orderId) {
+                $order = \App\Models\Order::with(['customer', 'items.product'])
+                    ->findOrFail($orderId);
+                
+                $blingService = app(\App\Services\Bling\BlingOrderService::class);
+                $result = $blingService->createOrder($order);
+                
+                if ($result['success']) {
+                    $order->update([
+                        'bling_order_number' => $result['bling_order_number'],
+                        'bling_synced_at' => now(),
+                    ]);
+                    
+                    return response()->json([
+                        'success' => true,
+                        'message' => "Pedido {$order->order_number} sincronizado com sucesso",
+                        'data' => [
+                            'order_number' => $order->order_number,
+                            'bling_order_number' => $result['bling_order_number'],
+                        ]
+                    ]);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Erro ao sincronizar pedido: {$result['error']}"
+                    ], 400);
+                }
+            }
+            
+            // Sincronização em massa: buscar pedidos não sincronizados
+            $orders = \App\Models\Order::with(['customer', 'items.product'])
+                ->whereNull('bling_synced_at')
+                ->where('payment_status', 'approved') // Só pedidos pagos
+                ->orderBy('created_at', 'desc')
+                ->limit($limit)
+                ->get();
+            
+            if ($orders->isEmpty()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Nenhum pedido pendente de sincronização',
+                    'synced' => 0
+                ]);
+            }
+            
+            $blingService = app(\App\Services\Bling\BlingOrderService::class);
+            $synced = 0;
+            $errors = [];
+            
+            foreach ($orders as $order) {
+                $result = $blingService->createOrder($order);
+                
+                if ($result['success']) {
+                    $order->update([
+                        'bling_order_number' => $result['bling_order_number'],
+                        'bling_synced_at' => now(),
+                    ]);
+                    $synced++;
+                } else {
+                    $errors[] = [
+                        'order_number' => $order->order_number,
+                        'error' => $result['error']
+                    ];
+                }
+                
+                // Delay para não sobrecarregar API
+                usleep(500000); // 0.5 segundos
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => "{$synced} pedido(s) sincronizado(s)",
+                'synced' => $synced,
+                'total' => $orders->count(),
+                'errors' => $errors
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Erro ao sincronizar pedidos', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()

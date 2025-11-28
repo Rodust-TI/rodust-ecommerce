@@ -87,6 +87,7 @@ return [
         
         // Webhook
         'webhook_url' => env('MERCADOPAGO_WEBHOOK_URL'),
+        'webhook_secret' => env('MERCADOPAGO_WEBHOOK_SECRET'),
     ],
 
 ];

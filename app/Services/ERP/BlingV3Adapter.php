@@ -3,10 +3,12 @@
 namespace App\Services\ERP;
 
 use App\Contracts\ERPInterface;
+use App\Models\Integration;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Adapter para Bling API v3
@@ -63,8 +65,34 @@ class BlingV3Adapter implements ERPInterface
      */
     protected function loadTokens(): void
     {
-        $this->accessToken = Cache::get('bling_access_token');
-        $this->refreshToken = Cache::get('bling_refresh_token');
+        // Verificar se tabela existe antes de consultar
+        if (!Schema::hasTable('integrations')) {
+            // Fallback para cache durante migrations
+            $this->accessToken = Cache::get('bling_access_token');
+            $this->refreshToken = Cache::get('bling_refresh_token');
+            return;
+        }
+        
+        // Tentar carregar do banco primeiro
+        $integration = Integration::where('service', 'bling')->first();
+        
+        if ($integration && $integration->is_active) {
+            $this->accessToken = $integration->access_token;
+            $this->refreshToken = $integration->refresh_token;
+            
+            // Manter cache sincronizado para performance
+            if ($this->accessToken && $integration->token_expires_at) {
+                $expiresIn = $integration->token_expires_at->diffInSeconds(now());
+                if ($expiresIn > 0) {
+                    Cache::put('bling_access_token', $this->accessToken, $expiresIn);
+                    Cache::put('bling_refresh_token', $this->refreshToken, now()->addDays(30));
+                }
+            }
+        } else {
+            // Fallback para cache (retrocompatibilidade)
+            $this->accessToken = Cache::get('bling_access_token');
+            $this->refreshToken = Cache::get('bling_refresh_token');
+        }
     }
 
     /**
@@ -74,7 +102,22 @@ class BlingV3Adapter implements ERPInterface
     {
         $this->accessToken = $accessToken;
         $this->refreshToken = $refreshToken;
+        
+        $expiresAt = now()->addSeconds($expiresIn);
 
+        // Salvar no banco (persistente)
+        Integration::updateOrCreate(
+            ['service' => 'bling'],
+            [
+                'access_token' => $accessToken,
+                'refresh_token' => $refreshToken,
+                'token_expires_at' => $expiresAt,
+                'is_active' => true,
+                'last_sync_at' => now(),
+            ]
+        );
+
+        // Manter cache para performance
         Cache::put('bling_access_token', $accessToken, $expiresIn - 60); // 1 min de margem
         Cache::put('bling_refresh_token', $refreshToken, now()->addDays(30));
     }
