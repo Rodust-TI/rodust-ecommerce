@@ -7,6 +7,7 @@ use MercadoPago\Client\Preference\PreferenceClient;
 use MercadoPago\MercadoPagoConfig;
 use MercadoPago\Exceptions\MPApiException;
 use Illuminate\Support\Facades\Log;
+use App\Helpers\IntegrationHelper;
 
 class MercadoPagoService
 {
@@ -16,8 +17,11 @@ class MercadoPagoService
 
     public function __construct()
     {
-        $this->accessToken = config('services.mercadopago.access_token');
-        $this->publicKey = config('services.mercadopago.public_key');
+        // Obter credenciais baseado no modo (sandbox/production)
+        $credentials = IntegrationHelper::getMercadoPagoCredentials();
+        
+        $this->accessToken = $credentials['access_token'];
+        $this->publicKey = $credentials['public_key'];
         
         // Configurar SDK
         MercadoPagoConfig::setAccessToken($this->accessToken);

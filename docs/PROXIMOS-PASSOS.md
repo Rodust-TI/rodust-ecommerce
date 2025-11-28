@@ -54,9 +54,9 @@
 ### WordPress Frontend (Desenvolvimento prioritário enquanto aguarda Bling)
 - [ ] Criar template de listagem de produtos
 - [ ] Criar template de produto individual
-- [ ] Implementar sistema de carrinho
-- [ ] Implementar checkout com gateway de pagamento
-- [ ] Integrar API de logística (cálculo de frete)
+- [x] Implementar sistema de carrinho
+- [/] Implementar checkout com gateway de pagamento
+- [x] Integrar API de logística (cálculo de frete)
 
 ---
 
@@ -66,26 +66,26 @@
 **Status:** Aguardando equipe Bling configurar conta para desenvolvimento (isenção de taxas)
 
 Quando retornar:
-- [ ] Executar comando `php artisan bling:get-token CODIGO_OAUTH`
-- [ ] Executar comando `php artisan bling:validate --token=TOKEN`
-- [ ] Executar comando `php artisan bling:list-products --limit=10`
-- [ ] Testar buscar produto já cadastrado no Bling
-- [ ] Validar sincronização bidirecional
-- [ ] Configurar webhooks no painel Bling
+- [x] Executar comando `php artisan bling:get-token CODIGO_OAUTH`
+- [x] Executar comando `php artisan bling:validate --token=TOKEN`
+- [x] Executar comando `php artisan bling:list-products --limit=10`
+- [x] Testar buscar produto já cadastrado no Bling
+- [x] Validar sincronização bidirecional
+- [x] Configurar webhooks no painel Bling
 
 ---
 
 ## 📋 Próximos Passos
 
 ### 1. Integração Bling (Prioridade: ALTA)
-- [ ] Obter token OAuth2 via link de convite do Bling
-- [ ] Configurar webhooks no painel Bling:
+- [x] Obter token OAuth2 via link de convite do Bling
+- [/] Configurar webhooks no painel Bling:
   - Alias: `rodust-ecommerce`
   - URL: `http://localhost:8000/api/webhooks/bling` (testes locais)
   - Ativar: produtos, estoques, pedidos, notasfiscais, nfce
-- [ ] Criar comando para importar produtos existentes do Bling
-- [ ] Testar fluxo completo: pedido no WP → Laravel → Bling
-- [ ] Implementar sincronização de categorias do Bling
+- [x] Criar comando para importar produtos existentes do Bling
+- [x] Testar fluxo completo: pedido no WP → Laravel → Bling
+- [x] Implementar sincronização de categorias do Bling
 
 ### 2. Segurança Webhooks (Prioridade: ALTA - PRÉ-PRODUÇÃO)
 - [ ] Implementar validação de assinatura HMAC-SHA256 do Bling
