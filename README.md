@@ -1,12 +1,47 @@
 # E-commerce Laravel + Bling ERP
 
-Projeto Laravel para e-commerce integrado ao Bling como ERP, com front-end WordPress.
+Backend API do projeto Rodust E-commerce integrado com Bling ERP, Mercado Pago e Melhor Envio.
+
+> **📚 Documentação completa:** [`/docs/`](../docs/)
+
+---
+
+## 🚀 Quick Start
+
+```powershell
+cd M:\Websites\rodust.com.br\ecommerce
+.\vendor\bin\sail up -d
+.\vendor\bin\sail ps
+```
+
+**Acessar API:** http://localhost:8000
+
+**Novo no projeto?** Veja o [Guia Rápido do Usuário](../GUIA-RAPIDO-USUARIO.md)
+
+---
+
+## 📚 Documentação
+
+Toda documentação foi centralizada em [`/docs/`](../docs/):
+
+- 🚀 [Setup e Instalação](../docs/01-SETUP/)
+- 🏗️ [Arquitetura](../docs/02-ARQUITETURA/)
+- 🔌 [Integrações (Bling, MercadoPago, MelhorEnvio)](../docs/03-INTEGRACAO/)
+- 💻 [Desenvolvimento (API, Helpers, Templates)](../docs/04-DESENVOLVIMENTO/)
+- ✅ [Testes](../docs/05-TESTES/)
+- 🚀 [Deploy](../docs/06-DEPLOY/)
+- 📜 [Auditoria (Histórico Fases 1-6)](../docs/07-AUDITORIA/)
+- 📖 [Referência (Changelog, Roadmap)](../docs/08-REFERENCIA/)
+
+---
 
 ## 📋 Requisitos
 
 - Docker Desktop com WSL2 habilitado
 - Git
-- Composer (para instalação inicial no Windows)
+- PowerShell (Windows)
+
+---
 
 ## 🚀 Configuração Inicial
 
