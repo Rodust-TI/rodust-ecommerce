@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\CustomerAddressController;
 use App\Http\Controllers\Api\WishlistController;
 use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\Api\MercadoPagoWebhookController;
 use App\Http\Controllers\API\MelhorEnvioController;
 use App\Http\Controllers\API\PaymentController;
 
@@ -64,7 +65,7 @@ Route::post('shipping/calculate', [MelhorEnvioController::class, 'calculateShipp
 Route::get('payments/mercadopago/public-key', [PaymentController::class, 'getPublicKey']);
 
 // Mercado Pago - Webhook (público - recebe notificações de pagamento)
-Route::post('webhooks/mercadopago', [PaymentController::class, 'webhook']);
+Route::post('webhooks/mercadopago', [MercadoPagoWebhookController::class, 'handle']);
 
 // ========================================
 // ROTAS PROTEGIDAS (requerem autenticação)

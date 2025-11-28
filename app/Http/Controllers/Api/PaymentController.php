@@ -163,8 +163,21 @@ class PaymentController extends Controller
 
             $order->update([
                 'payment_id' => $boletoResult['payment_id'],
-                'payment_status' => $boletoResult['status']
+                'payment_status' => 'pending'
             ]);
+
+            // Criar pedido no Bling
+            $blingResult = $this->blingOrder->createOrder($order);
+            if ($blingResult['success']) {
+                $order->update([
+                    'bling_order_number' => $blingResult['bling_order_number'],
+                    'bling_synced_at' => now()
+                ]);
+                Log::info('Pedido boleto sincronizado com Bling', [
+                    'order_id' => $order->id,
+                    'bling_order_number' => $blingResult['bling_order_number']
+                ]);
+            }
 
             DB::commit();
 
@@ -174,16 +187,29 @@ class PaymentController extends Controller
                 'payment_id' => $boletoResult['payment_id']
             ]);
 
+            $order->load(['customer', 'items.product']);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Boleto gerado com sucesso',
                 'data' => [
-                    'order_id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'payment_id' => $boletoResult['payment_id'],
-                    'ticket_url' => $boletoResult['ticket_url'],
-                    'barcode' => $boletoResult['barcode'],
-                    'due_date' => $boletoResult['due_date']
+                    'order' => [
+                        'id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'status' => $order->status,
+                        'payment_method' => $order->payment_method,
+                        'payment_status' => $order->payment_status,
+                        'subtotal' => (float) $order->subtotal,
+                        'shipping' => (float) $order->shipping,
+                        'total' => (float) $order->total,
+                        'created_at' => $order->created_at->toIso8601String(),
+                    ],
+                    'boleto' => [
+                        'payment_id' => $boletoResult['payment_id'],
+                        'ticket_url' => $boletoResult['ticket_url'],
+                        'barcode' => $boletoResult['barcode'],
+                        'due_date' => $boletoResult['due_date']
+                    ]
                 ]
             ]);
 
@@ -203,59 +229,117 @@ class PaymentController extends Controller
 
     /**
      * Criar pedido e processar cartão de crédito
-     * TODO: Implementar quando formulário de cartão estiver pronto no frontend
      */
-    public function createCardPayment(Request $request)
+    public function createCardPayment(CreatePaymentRequest $request)
     {
-        return response()->json([
-            'success' => false,
-            'message' => 'Pagamento com cartão ainda não implementado'
-        ], 501);
-    }
-
-    /**
-     * Webhook do Mercado Pago
-     * TODO: Mover para WebhookController quando implementar
-     */
-    public function webhook(Request $request)
-    {
-        Log::info('Webhook Mercado Pago recebido', $request->all());
+        DB::beginTransaction();
 
         try {
-            $type = $request->input('type');
-            $dataId = $request->input('data.id');
+            // Validar dados do cartão
+            $request->validate([
+                'card_token' => 'required|string',
+                'installments' => 'required|integer|min:1|max:12',
+                'payment_method_id' => 'required|string',
+                'issuer_id' => 'required|string'
+            ]);
 
-            if ($type !== 'payment' || !$dataId) {
-                return response()->json(['success' => false], 400);
+            $customer = Customer::findOrFail($request->customer_id);
+            $order = $this->orderCreation->createFromRequest($request, $customer, 'credit_card');
+
+            $customerData = $this->customerFormatter->formatForMercadoPago($customer);
+            
+            $cardData = [
+                'token' => $request->card_token,
+                'installments' => $request->installments,
+                'payment_method_id' => $request->payment_method_id,
+                'issuer_id' => $request->issuer_id
+            ];
+
+            $cardResult = $this->mercadoPago->createCardPayment($order, $customerData, $cardData);
+
+            if (!$cardResult['success']) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => $cardResult['error']
+                ], 400);
             }
 
-            $paymentStatus = $this->mercadoPago->getPaymentStatus($dataId);
+            $order->update([
+                'payment_id' => $cardResult['payment_id'],
+                'payment_status' => $cardResult['status']
+            ]);
 
-            if (!$paymentStatus['success']) {
-                return response()->json(['success' => false], 400);
+            // Se aprovado, criar pedido no Bling
+            if ($cardResult['approved']) {
+                $blingResult = $this->blingOrder->createOrder($order);
+                if ($blingResult['success']) {
+                    $order->update([
+                        'bling_order_number' => $blingResult['bling_order_number'],
+                        'bling_synced_at' => now(),
+                        'status' => 'processing'
+                    ]);
+                    Log::info('Pedido cartão sincronizado com Bling', [
+                        'order_id' => $order->id,
+                        'bling_order_number' => $blingResult['bling_order_number']
+                    ]);
+                }
             }
 
-            $order = Order::where('payment_id', $dataId)->first();
+            DB::commit();
 
-            if (!$order) {
-                Log::warning('Pedido não encontrado', ['payment_id' => $dataId]);
-                return response()->json(['success' => false], 404);
-            }
+            Log::info('Pedido Cartão criado', [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'payment_id' => $cardResult['payment_id'],
+                'status' => $cardResult['status']
+            ]);
 
-            $order->update(['payment_status' => $paymentStatus['status']]);
+            $order->load(['customer', 'items.product']);
 
-            if ($paymentStatus['approved']) {
-                $order->update(['status' => 'processing']);
-                Log::info('Pagamento aprovado', ['order_id' => $order->id]);
-                
-                // TODO: Enviar para Bling, enviar email
-            }
+            return response()->json([
+                'success' => true,
+                'message' => $cardResult['approved'] ? 'Pagamento aprovado!' : 'Pagamento em análise',
+                'data' => [
+                    'order' => [
+                        'id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'status' => $order->status,
+                        'payment_method' => $order->payment_method,
+                        'payment_status' => $order->payment_status,
+                        'subtotal' => (float) $order->subtotal,
+                        'shipping' => (float) $order->shipping,
+                        'total' => (float) $order->total,
+                        'created_at' => $order->created_at->toIso8601String(),
+                    ],
+                    'payment' => [
+                        'payment_id' => $cardResult['payment_id'],
+                        'status' => $cardResult['status'],
+                        'status_detail' => $cardResult['status_detail'],
+                        'approved' => $cardResult['approved']
+                    ]
+                ]
+            ]);
 
-            return response()->json(['success' => true]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Dados do cartão inválidos',
+                'errors' => $e->errors()
+            ], 422);
 
         } catch (\Exception $e) {
-            Log::error('Erro ao processar webhook', ['error' => $e->getMessage()]);
-            return response()->json(['success' => false], 500);
+            DB::rollBack();
+            Log::error('Erro ao processar pagamento com cartão', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao processar pagamento: ' . $e->getMessage()
+            ], 500);
         }
     }
 
