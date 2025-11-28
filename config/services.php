@@ -48,16 +48,18 @@ return [
     ],
 
     'melhor_envio' => [
+        // Modo de operação
+        'mode' => env('INTEGRATIONS_MODE', 'sandbox'),
+        
         // Configurações gerais
-        'sandbox' => env('MELHOR_ENVIO_SANDBOX', true),
         'origin_cep' => env('MELHOR_ENVIO_ORIGIN_CEP', '13400710'),
         
         // OAuth2 - Sandbox
-        'client_id_sandbox' => env('MELHOR_ENVIO_CLIENT_ID_SANDBOX', '7552'),
+        'client_id_sandbox' => env('MELHOR_ENVIO_CLIENT_ID_SANDBOX'),
         'client_secret_sandbox' => env('MELHOR_ENVIO_CLIENT_SECRET_SANDBOX'),
         
         // OAuth2 - Produção
-        'client_id_prod' => env('MELHOR_ENVIO_CLIENT_ID_PROD', '15782'),
+        'client_id_prod' => env('MELHOR_ENVIO_CLIENT_ID_PROD'),
         'client_secret_prod' => env('MELHOR_ENVIO_CLIENT_SECRET_PROD'),
         
         // URLs
@@ -72,9 +74,18 @@ return [
     ],
 
     'mercadopago' => [
-        'public_key' => env('MERCADOPAGO_PUBLIC_KEY'),
-        'access_token' => env('MERCADOPAGO_ACCESS_TOKEN'),
-        'sandbox' => env('MERCADOPAGO_SANDBOX', true),
+        // Modo de operação
+        'mode' => env('INTEGRATIONS_MODE', 'sandbox'),
+        
+        // Credenciais Sandbox
+        'public_key_sandbox' => env('MERCADOPAGO_PUBLIC_KEY_SANDBOX'),
+        'access_token_sandbox' => env('MERCADOPAGO_ACCESS_TOKEN_SANDBOX'),
+        
+        // Credenciais Produção
+        'public_key_prod' => env('MERCADOPAGO_PUBLIC_KEY_PROD'),
+        'access_token_prod' => env('MERCADOPAGO_ACCESS_TOKEN_PROD'),
+        
+        // Webhook
         'webhook_url' => env('MERCADOPAGO_WEBHOOK_URL'),
     ],
 
