@@ -39,6 +39,8 @@
 - [x] Settings page com teste de conexão
 - [x] Documentação (README.md com 400+ linhas)
 - [x] Conexão WordPress ↔ Laravel testada e funcionando
+- [x] Classe Helpers (class-helpers.php) para eliminar duplicação de código
+- [x] Helpers JavaScript (helpers.js) para padronização no frontend
 
 ### Webhooks Bling
 - [x] Handler para produtos (criar/atualizar/deletar)
