@@ -28,7 +28,7 @@ class BlingSyncProducts extends Command
 
         // Verificar autenticação
         if (!Cache::has('bling_access_token')) {
-            $this->error('❌ Não autenticado no Bling. Acesse http://localhost:8000/bling para autorizar.');
+            $this->error('❌ Não autenticado no Bling. Acesse ' . config('urls.laravel.bling_url') . ' para autorizar.');
             return 1;
         }
 
@@ -210,7 +210,7 @@ class BlingSyncProducts extends Command
             // Buscar produtos do Laravel
             $products = Product::where('active', true)->get();
             
-            $wpUrl = rtrim(config('app.frontend_url', 'http://localhost:8080'), '/');
+            $wpUrl = rtrim(config('urls.wordpress.external'), '/');
             
             foreach ($products as $product) {
                 // Enviar para API do WordPress

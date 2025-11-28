@@ -13,21 +13,14 @@ class CorsMiddleware
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $allowedOrigins = [
+        // Obter origens permitidas do config centralizado
+        $allowedOrigins = config('urls.cors.allowed_origins', [
             'http://localhost',
-            'https://localhost',
             'http://localhost:8080',
-            'https://localhost:8080',
-            'http://localhost:3000',
-            'https://localhost:3000',
-            'http://127.0.0.1',
-            'https://127.0.0.1',
-            'http://127.0.0.1:8080',
-            'https://127.0.0.1:8080',
-        ];
+        ]);
 
         $origin = $request->header('Origin');
-        $allowedOrigin = ($origin && in_array($origin, $allowedOrigins)) ? $origin : 'http://localhost';
+        $allowedOrigin = ($origin && in_array($origin, $allowedOrigins)) ? $origin : $allowedOrigins[0] ?? 'http://localhost';
 
         // Preflight request (OPTIONS)
         if ($request->isMethod('OPTIONS')) {

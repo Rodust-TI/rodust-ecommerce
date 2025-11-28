@@ -16,7 +16,7 @@ class SyncProductsToWordPress extends Command
         $this->info('🔄 Sincronizando produtos com WordPress...');
         
         $products = Product::all();
-        $wpUrl = rtrim(config('app.frontend_url', 'http://localhost:8080'), '/');
+        $wpUrl = rtrim(config('urls.wordpress.external'), '/');
         
         $success = 0;
         $errors = 0;

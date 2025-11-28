@@ -62,7 +62,7 @@ class CustomerController extends Controller
         ]);
 
         // URL de verificação (WordPress)
-        $verificationUrl = env('APP_FRONTEND_PUBLIC_URL', env('APP_FRONTEND_URL', 'http://localhost:8080')) . '/verificar-email?token=' . $verificationToken;
+        $verificationUrl = config('urls.wordpress.verify_email') . '?token=' . $verificationToken;
 
         // Enviar email de verificação
         try {
@@ -71,6 +71,9 @@ class CustomerController extends Controller
             // Silenciar erro de email - não bloqueia cadastro
             // Em produção, usar serviço de monitoramento como Sentry
         }
+
+        // Sincronizar cliente com Bling
+        SyncCustomerToBling::dispatch($customer);
 
         return response()->json([
             'success' => true,
@@ -242,7 +245,7 @@ class CustomerController extends Controller
             ]);
 
             // URL de verificação
-            $verificationUrl = env('APP_FRONTEND_PUBLIC_URL', env('APP_FRONTEND_URL', 'http://localhost:8080')) . '/verificar-email?token=' . $verificationToken;
+            $verificationUrl = config('urls.wordpress.verify_email') . '?token=' . $verificationToken;
 
             // Enviar email
             Log::info('Tentando reenviar email para: ' . $customer->email);
@@ -253,8 +256,10 @@ class CustomerController extends Controller
             'success' => true,
             'message' => 'Email de verificação reenviado com sucesso! Verifique sua caixa de entrada.'
         ])
-        ->header('Access-Control-Allow-Origin', $request->header('Origin') ?? 'http://localhost')
-        ->header('Access-Control-Allow-Credentials', 'true');        } catch (\Illuminate\Validation\ValidationException $e) {
+        ->header('Access-Control-Allow-Origin', $request->header('Origin') ?? config('urls.cors.allowed_origins')[0])
+        ->header('Access-Control-Allow-Credentials', 'true');
+        
+        } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Dados inválidos.',

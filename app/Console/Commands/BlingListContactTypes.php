@@ -20,7 +20,7 @@ class BlingListContactTypes extends Command
 
         if (!$token) {
             $this->error('❌ Token de acesso não encontrado!');
-            $this->warn('Execute a autenticação OAuth primeiro: http://localhost:8000/bling');
+            $this->warn('Execute a autenticação OAuth primeiro: ' . config('urls.laravel.bling_url'));
             return 1;
         }
 

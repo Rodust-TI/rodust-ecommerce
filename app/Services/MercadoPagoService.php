@@ -120,7 +120,7 @@ class MercadoPagoService
                         'federal_unit' => $order->shipping_state
                     ]
                 ],
-                // 'notification_url' => config('services.mercadopago.webhook_url'), // Comentado: localhost não é aceito pelo Mercado Pago
+                // 'notification_url' => config('urls.integrations.mercadopago.webhook_url'), // Comentado: localhost não é aceito pelo Mercado Pago
                 'external_reference' => (string) $order->id,
                 'metadata' => [
                     'order_id' => $order->id,
@@ -186,7 +186,7 @@ class MercadoPagoService
                         'number' => preg_replace('/\D/', '', $customerData['document'])
                     ]
                 ],
-                // 'notification_url' => config('services.mercadopago.webhook_url'), // Comentado: localhost não é aceito pelo Mercado Pago
+                // 'notification_url' => config('urls.integrations.mercadopago.webhook_url'), // Comentado: localhost não é aceito pelo Mercado Pago
                 'external_reference' => (string) $order->id,
                 'metadata' => [
                     'order_id' => $order->id,
