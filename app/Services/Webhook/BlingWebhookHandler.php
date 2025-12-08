@@ -280,6 +280,39 @@ class BlingWebhookHandler
         // Mapear status do Bling
         $blingStatus = $orderData['situacao'] ?? null;
 
+        // Se o webhook não contém o status, buscar o pedido completo do Bling
+        if (!$blingStatus) {
+            Log::info('Webhook não contém status, buscando pedido completo do Bling', [
+                'bling_order_number' => $blingOrderNumber,
+                'webhook_log_id' => $webhookLog->id
+            ]);
+            
+            try {
+                $blingOrderService = app(\App\Services\Bling\BlingOrderService::class);
+                $blingOrderFull = $blingOrderService->getOrder($blingOrderNumber);
+                
+                if ($blingOrderFull && isset($blingOrderFull['situacao'])) {
+                    $blingStatus = $blingOrderFull['situacao'];
+                    Log::info('Status obtido do pedido completo do Bling', [
+                        'bling_order_number' => $blingOrderNumber,
+                        'status_id' => $blingStatus['id'] ?? null,
+                        'webhook_log_id' => $webhookLog->id
+                    ]);
+                } else {
+                    Log::warning('Pedido completo do Bling também não contém status', [
+                        'bling_order_number' => $blingOrderNumber,
+                        'webhook_log_id' => $webhookLog->id
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Erro ao buscar pedido completo do Bling', [
+                    'bling_order_number' => $blingOrderNumber,
+                    'error' => $e->getMessage(),
+                    'webhook_log_id' => $webhookLog->id
+                ]);
+            }
+        }
+
         if ($blingStatus) {
             $blingStatusId = $blingStatus['id'] ?? null;
             $blingStatusName = $this->statusService->getStatusName($blingStatusId);
@@ -300,7 +333,8 @@ class BlingWebhookHandler
                 'bling_status_name' => $blingStatusName,
                 'old_internal_status' => $oldStatus,
                 'new_internal_status' => $internalStatus,
-                'webhook_log_id' => $webhookLog->id
+                'webhook_log_id' => $webhookLog->id,
+                'status_source' => isset($orderData['situacao']) ? 'webhook' : 'api_fetch'
             ]);
 
             // Atualizar metadata do log
@@ -311,15 +345,16 @@ class BlingWebhookHandler
                 'bling_status_name' => $blingStatusName,
                 'old_internal_status' => $oldStatus,
                 'new_internal_status' => $internalStatus,
+                'status_source' => isset($orderData['situacao']) ? 'webhook' : 'api_fetch'
             ]);
         } else {
-            Log::warning('Order webhook without status information', [
+            Log::warning('Order webhook without status information (even after API fetch)', [
                 'bling_order_number' => $blingOrderNumber,
                 'order_data' => $orderData,
                 'webhook_log_id' => $webhookLog->id
             ]);
             app(WebhookLogService::class)->addMetadata($webhookLog, [
-                'error' => 'Missing status information in webhook',
+                'error' => 'Missing status information in webhook and API fetch',
                 'order_data_keys' => array_keys($orderData),
             ]);
         }
