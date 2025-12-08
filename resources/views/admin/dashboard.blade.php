@@ -219,8 +219,8 @@
                         </div>
                         <div class="text-right ml-4">
                             <p class="text-sm font-bold text-white">R$ {{ number_format($order->total, 2, ',', '.') }}</p>
-                            <span class="text-xs {{ $status['color'] === 'green' ? 'text-green-300' : ($status['color'] === 'red' ? 'text-red-300' : 'text-gray-400') }}">
-                                {{ $status['icon'] }} {{ ucfirst($order->status) }}
+                            <span class="text-xs {{ $statusColor === 'green' ? 'text-green-300' : ($statusColor === 'red' ? 'text-red-300' : 'text-gray-400') }}">
+                                {{ $statusIcon }} {{ $statusLabel }}
                             </span>
                         </div>
                     </div>
