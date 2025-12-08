@@ -126,8 +126,8 @@
                                     {{ $order->created_at->format('d/m/Y H:i') }}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <span class="px-2 py-1 text-xs rounded bg-{{ $status['color'] }}-500/20 text-{{ $status['color'] }}-300">
-                                        {{ $status['icon'] }} {{ ucfirst($order->status) }}
+                                    <span class="px-2 py-1 text-xs rounded bg-{{ $statusColor }}-500/20 text-{{ $statusColor }}-300">
+                                        {{ $statusIcon }} {{ $statusLabel }}
                                     </span>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
