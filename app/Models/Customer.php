@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -10,7 +11,7 @@ use Laravel\Sanctum\HasApiTokens;
 
 class Customer extends Authenticatable
 {
-    use HasApiTokens, Notifiable, SoftDeletes;
+    use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
 
     protected $fillable = [
         'name',
@@ -30,6 +31,9 @@ class Customer extends Authenticatable
         'email_verified_at',
         'verification_token',
         'verification_token_expires_at',
+        'password_reset_token',
+        'password_reset_token_expires_at',
+        'must_reset_password',
         // Campos de endereço antigos mantidos temporariamente
         'zipcode',
         'address',
@@ -50,9 +54,10 @@ class Customer extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'verification_token_expires_at' => 'datetime',
+        'password_reset_token_expires_at' => 'datetime',
         'bling_synced_at' => 'datetime',
         'birth_date' => 'date',
-        'password' => 'hashed', // Laravel 11+ auto-hash
+        'must_reset_password' => 'boolean',
     ];
 
     /**

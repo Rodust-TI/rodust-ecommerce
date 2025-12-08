@@ -13,7 +13,16 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Bind interfaces para services (desacoplamento)
+        $this->app->bind(
+            \App\Contracts\InvoiceServiceInterface::class,
+            \App\Services\Invoice\InvoiceService::class
+        );
+
+        $this->app->bind(
+            \App\Contracts\ShippingServiceInterface::class,
+            \App\Services\Shipping\ShippingService::class
+        );
     }
 
     /**

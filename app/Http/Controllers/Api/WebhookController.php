@@ -3,13 +3,18 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Product;
-use App\Models\Order;
+use App\Services\Webhook\WebhookLogService;
+use App\Services\Webhook\BlingWebhookHandler;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class WebhookController extends Controller
 {
+    public function __construct(
+        private WebhookLogService $logService,
+        private BlingWebhookHandler $blingHandler
+    ) {}
+
     /**
      * Handle incoming webhooks from Bling ERP
      * 
@@ -22,52 +27,95 @@ class WebhookController extends Controller
      */
     public function handle(Request $request)
     {
-        // Log webhook payload for debugging
+        $startTime = microtime(true);
+        $payload = $request->all();
+        
+        // Criar log do webhook ANTES de processar
+        $webhookLog = $this->logService->createLog('bling', $request, $payload);
+        
+        // Salvar no cache para o comando de escuta
+        \Illuminate\Support\Facades\Cache::put("webhook_recent_bling", [
+            'id' => $webhookLog->id,
+            'type' => $payload['event'] ?? null,
+            'timestamp' => now()->format('Y-m-d H:i:s'),
+        ], 60); // 1 minuto
+
         Log::info('Bling Webhook Received', [
-            'headers' => $request->headers->all(),
-            'body' => $request->all(),
+            'webhook_log_id' => $webhookLog->id,
+            'event_id' => $webhookLog->event_id,
+            'event' => $webhookLog->event_type,
         ]);
 
-        // Validate webhook signature (Bling sends a hash)
+        // Validate webhook signature
         if (!$this->validateWebhook($request)) {
-            Log::warning('Invalid Bling webhook signature');
+            $this->logService->markAsError($webhookLog, 'Invalid signature', 401);
+            
+            Log::warning('Invalid Bling webhook signature', [
+                'webhook_log_id' => $webhookLog->id
+            ]);
+            
             return response()->json(['error' => 'Invalid signature'], 401);
         }
+        
+        // Atualizar status para processing
+        $this->logService->markAsProcessing($webhookLog);
 
-        $data = $request->all();
-        $topic = $data['topic'] ?? null; // Ex: 'produtos', 'estoques', 'pedidos'
+        // Extrair evento no formato "resource.action" (ex: "order.updated", "stock.updated")
+        $event = $payload['event'] ?? null;
+        
+        if (!$event) {
+            $this->logService->markAsError($webhookLog, 'Missing event field', 400);
+            Log::warning('Bling webhook sem campo "event"', ['webhook_log_id' => $webhookLog->id]);
+            return response()->json(['error' => 'Missing event field'], 400);
+        }
+        
+        // Separar resource e action
+        $parts = explode('.', $event);
+        if (count($parts) !== 2) {
+            $this->logService->markAsError($webhookLog, 'Invalid event format', 400);
+            Log::warning('Bling webhook event com formato inválido', [
+                'event' => $event,
+                'webhook_log_id' => $webhookLog->id
+            ]);
+            return response()->json(['error' => 'Invalid event format'], 400);
+        }
+        
+        [$resource, $action] = $parts;
 
         try {
-            switch ($topic) {
-                case 'produtos':
-                    $this->handleProductWebhook($data);
-                    break;
-
-                case 'estoques':
-                    $this->handleStockWebhook($data);
-                    break;
-
-                case 'pedidos':
-                    $this->handleOrderWebhook($data);
-                    break;
-
-                case 'notasfiscais':
-                case 'nfce':
-                    $this->handleInvoiceWebhook($data);
-                    break;
-
-                default:
-                    Log::info('Unknown webhook topic: ' . $topic);
+            // Log completo do payload para debug (apenas em desenvolvimento)
+            if (config('app.env') === 'local') {
+                Log::debug('Bling Webhook - Payload completo', [
+                    'webhook_log_id' => $webhookLog->id,
+                    'event' => $event,
+                    'resource' => $resource,
+                    'action' => $action,
+                    'full_payload' => $payload,
+                ]);
             }
+            
+            // Processar webhook usando handler dedicado
+            $this->blingHandler->handle($payload, $action, $webhookLog);
 
-            return response()->json(['success' => true]);
+            // IMPORTANTE: Bling requer resposta 2xx em até 5 segundos
+            $response = response()->json(['success' => true], 200);
+            
+            // Atualizar log com sucesso
+            $this->logService->markAsSuccess($webhookLog, '{"success": true}', 200, [
+                'processing_time_ms' => round((microtime(true) - $startTime) * 1000, 2),
+            ]);
+            
+            return $response;
 
         } catch (\Exception $e) {
             Log::error('Webhook processing error', [
-                'topic' => $topic,
+                'webhook_log_id' => $webhookLog->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+            
+            // Atualizar log com erro
+            $this->logService->markAsError($webhookLog, $e->getMessage(), 500);
 
             return response()->json(['error' => 'Processing failed'], 500);
         }
@@ -75,179 +123,64 @@ class WebhookController extends Controller
 
     /**
      * Validate webhook signature from Bling
+     * 
+     * Conforme documentação: https://developer.bling.com.br/webhooks
+     * O Bling envia um hash HMAC-SHA256 no header X-Bling-Signature-256
+     * Formato: sha256={hash}
+     * 
+     * O hash é calculado usando o payload JSON e o client_secret
      */
     protected function validateWebhook(Request $request): bool
     {
-        // Bling pode enviar um hash no header para validação
-        // Verificar documentação oficial: https://developer.bling.com.br/webhooks
+        $signatureHeader = $request->header('X-Bling-Signature-256');
         
-        $signature = $request->header('X-Bling-Signature');
-        
-        // Se não tiver assinatura, aceitar temporariamente (remover em produção)
-        if (!$signature && config('app.env') === 'local') {
+        // Em ambiente local, aceitar sem assinatura para facilitar testes
+        if (!$signatureHeader && config('app.env') === 'local') {
+            Log::info('Bling webhook sem assinatura - aceito em ambiente local');
             return true;
         }
-
-        // TODO: Implementar validação de assinatura conforme documentação Bling
-        // Geralmente é um HMAC-SHA256 do payload com o client_secret
         
-        return true; // Temporário
-    }
-
-    /**
-     * Handle product creation/update/deletion
-     */
-    protected function handleProductWebhook(array $data): void
-    {
-        $event = $data['event'] ?? null; // 'created', 'updated', 'deleted'
-        $productData = $data['data'] ?? [];
+        if (!$signatureHeader) {
+            Log::warning('Bling webhook sem header X-Bling-Signature-256');
+            return false;
+        }
         
-        $blingId = $productData['id'] ?? null;
+        // Extrair hash do formato "sha256={hash}"
+        if (!str_starts_with($signatureHeader, 'sha256=')) {
+            Log::warning('Bling webhook signature com formato inválido', [
+                'header' => $signatureHeader
+            ]);
+            return false;
+        }
         
-        if (!$blingId) {
-            Log::warning('Product webhook without Bling ID');
-            return;
-        }
-
-        switch ($event) {
-            case 'created':
-            case 'updated':
-                // Atualizar ou criar produto no banco local
-                Product::updateOrCreate(
-                    ['bling_id' => $blingId],
-                    [
-                        'sku' => $productData['codigo'] ?? null,
-                        'name' => $productData['nome'] ?? null,
-                        'description' => $productData['descricao'] ?? null,
-                        'price' => $productData['preco'] ?? 0,
-                        'cost' => $productData['precoCusto'] ?? null,
-                        'stock' => $productData['estoque'] ?? 0,
-                        'image' => $productData['imagemURL'] ?? null,
-                        'active' => true,
-                        'last_bling_sync' => now(),
-                    ]
-                );
-                
-                Log::info("Product {$event} from Bling", ['bling_id' => $blingId]);
-                break;
-
-            case 'deleted':
-                // Desativar produto ao invés de deletar (soft delete)
-                Product::where('bling_id', $blingId)->update([
-                    'active' => false,
-                    'last_bling_sync' => now(),
-                ]);
-                
-                Log::info("Product deleted from Bling", ['bling_id' => $blingId]);
-                break;
-        }
-    }
-
-    /**
-     * Handle stock level updates
-     */
-    protected function handleStockWebhook(array $data): void
-    {
-        $productData = $data['data'] ?? [];
-        $blingId = $productData['idProduto'] ?? null;
-        $newStock = $productData['saldo'] ?? null;
-
-        if (!$blingId || $newStock === null) {
-            Log::warning('Stock webhook without product ID or stock value');
-            return;
-        }
-
-        // Atualizar estoque do produto
-        $updated = Product::where('bling_id', $blingId)->update([
-            'stock' => $newStock,
-            'last_bling_sync' => now(),
-        ]);
-
-        if ($updated) {
-            Log::info("Stock updated from Bling", [
-                'bling_id' => $blingId,
-                'new_stock' => $newStock,
-            ]);
-        }
-    }
-
-    /**
-     * Handle order status changes
-     */
-    protected function handleOrderWebhook(array $data): void
-    {
-        $event = $data['event'] ?? null;
-        $orderData = $data['data'] ?? [];
-        $blingId = $orderData['id'] ?? null;
-
-        if (!$blingId) {
-            Log::warning('Order webhook without Bling ID');
-            return;
-        }
-
-        // Atualizar status do pedido local
-        $order = Order::where('bling_id', $blingId)->first();
+        $receivedHash = substr($signatureHeader, 7); // Remove "sha256="
         
-        if ($order) {
-            $order->update([
-                'status' => $this->mapBlingOrderStatus($orderData['situacao'] ?? null),
-                'last_bling_sync' => now(),
-            ]);
-
-            Log::info("Order {$event} from Bling", [
-                'bling_id' => $blingId,
-                'status' => $order->status,
-            ]);
-        }
-    }
-
-    /**
-     * Handle invoice/nfce issuance
-     */
-    protected function handleInvoiceWebhook(array $data): void
-    {
-        $invoiceData = $data['data'] ?? [];
-        $orderBlingId = $invoiceData['idPedido'] ?? null;
-        $invoiceNumber = $invoiceData['numero'] ?? null;
-        $invoiceKey = $invoiceData['chaveAcesso'] ?? null;
-
-        if (!$orderBlingId) {
-            Log::warning('Invoice webhook without order ID');
-            return;
-        }
-
-        // Atualizar pedido com dados da nota fiscal
-        $order = Order::where('bling_id', $orderBlingId)->first();
+        // Obter client_secret do config
+        $clientSecret = config('services.bling.client_secret');
         
-        if ($order) {
-            $order->update([
-                'invoice_number' => $invoiceNumber,
-                'invoice_key' => $invoiceKey,
-                'invoice_issued_at' => now(),
-                'status' => 'invoiced',
-                'last_bling_sync' => now(),
-            ]);
-
-            Log::info("Invoice issued for order", [
-                'order_id' => $order->id,
-                'invoice_number' => $invoiceNumber,
-            ]);
+        if (!$clientSecret) {
+            Log::error('Bling client_secret não configurado para validação de webhook');
+            return false;
         }
-    }
-
-    /**
-     * Map Bling order status to internal status
-     */
-    protected function mapBlingOrderStatus(?string $blingStatus): string
-    {
-        return match($blingStatus) {
-            'Em aberto' => 'pending',
-            'Em andamento' => 'processing',
-            'Faturado' => 'invoiced',
-            'Enviado' => 'shipped',
-            'Entregue' => 'delivered',
-            'Cancelado' => 'cancelled',
-            default => 'pending',
-        };
+        
+        // Obter payload bruto (JSON)
+        $payload = $request->getContent();
+        
+        // Calcular hash HMAC-SHA256
+        $calculatedHash = hash_hmac('sha256', $payload, $clientSecret);
+        
+        // Comparar hashes usando hash_equals para evitar timing attacks
+        $isValid = hash_equals($receivedHash, $calculatedHash);
+        
+        if (!$isValid) {
+            Log::warning('Bling webhook signature inválida', [
+                'received' => substr($receivedHash, 0, 16) . '...',
+                'calculated' => substr($calculatedHash, 0, 16) . '...'
+            ]);
+        } else {
+            Log::debug('Bling webhook signature válida');
+        }
+        
+        return $isValid;
     }
 }

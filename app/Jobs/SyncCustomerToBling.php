@@ -43,9 +43,15 @@ class SyncCustomerToBling implements ShouldQueue
      */
     public function handle(BlingCustomerService $blingService): void
     {
+        // CRÍTICO: Recarregar customer com addresses para garantir dados atualizados
+        $this->customer->refresh();
+        $this->customer->load('addresses');
+        
         Log::info('Starting customer sync to Bling', [
             'customer_id' => $this->customer->id,
             'email' => $this->customer->email,
+            'phone' => $this->customer->phone,
+            'addresses_count' => $this->customer->addresses->count(),
             'attempt' => $this->attempts()
         ]);
 

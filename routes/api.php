@@ -33,7 +33,12 @@ Route::prefix('customers')->group(function () {
     Route::post('/verify-email', [CustomerController::class, 'verifyEmail']);
     Route::post('/resend-verification', [CustomerController::class, 'resendVerification']);
     Route::post('/sync-from-wordpress', [CustomerController::class, 'syncFromWordPress']);
+    Route::post('/forgot-password', [CustomerController::class, 'forgotPassword']);
+    Route::post('/reset-password', [CustomerController::class, 'resetPassword']);
 });
+
+// Google OAuth - Validar token e retornar dados do usuário
+Route::post('auth/google/validate-token', [App\Http\Controllers\Auth\GoogleAuthController::class, 'validateToken']);
 
 // Produtos (para WordPress consumir)
 Route::prefix('products')->group(function () {
@@ -66,6 +71,20 @@ Route::get('payments/mercadopago/public-key', [PaymentController::class, 'getPub
 
 // Mercado Pago - Webhook (público - recebe notificações de pagamento)
 Route::post('webhooks/mercadopago', [MercadoPagoWebhookController::class, 'handle']);
+
+// Verificar status do pedido (público - usado para polling PIX)
+Route::get('orders/{id}/status', [OrderController::class, 'checkStatus']);
+
+// ========================================
+// SIMULADOR DE PAGAMENTOS (apenas desenvolvimento)
+// ========================================
+if (config('app.env') !== 'production') {
+    Route::prefix('dev')->group(function () {
+        Route::post('simulate-pix-payment', [\App\Http\Controllers\Api\MercadoPagoSimulatorController::class, 'simulatePixPayment']);
+        Route::post('simulate-payment-status', [\App\Http\Controllers\Api\MercadoPagoSimulatorController::class, 'simulatePaymentStatus']);
+        Route::get('pending-pix-orders', [\App\Http\Controllers\Api\MercadoPagoSimulatorController::class, 'listPendingPixOrders']);
+    });
+}
 
 // ========================================
 // ROTAS PROTEGIDAS (requerem autenticação)

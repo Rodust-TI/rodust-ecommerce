@@ -42,7 +42,7 @@ class SyncProductToWordPress implements ShouldQueue
         }
 
         try {
-            $wpUrl = config('services.wordpress.url');
+            $wpUrl = config('services.wordpress.sync_url');
             $wpUser = config('services.wordpress.api_user');
             $wpPassword = config('services.wordpress.api_password');
 

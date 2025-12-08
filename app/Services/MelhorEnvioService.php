@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\MelhorEnvioException;
 use App\Models\MelhorEnvioSetting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -17,17 +18,33 @@ class MelhorEnvioService
         
         // Se não tem settings no banco, criar/usar do .env
         if (!$this->settings) {
-            $sandbox = config('services.melhor_envio.sandbox', true);
-            $this->settings = new MelhorEnvioSetting([
-                'client_id' => $sandbox 
-                    ? config('services.melhor_envio.client_id_sandbox') 
-                    : config('services.melhor_envio.client_id_prod'),
-                'client_secret' => $sandbox
-                    ? config('services.melhor_envio.client_secret_sandbox')
-                    : config('services.melhor_envio.client_secret_prod'),
-                'origin_postal_code' => config('services.melhor_envio.origin_cep'),
-                'sandbox_mode' => $sandbox,
-            ]);
+            $sandbox = config('services.melhor_envio.mode', 'sandbox') === 'sandbox';
+            
+            $clientId = $sandbox 
+                ? config('services.melhor_envio.client_id_sandbox') 
+                : config('services.melhor_envio.client_id_prod');
+            
+            $clientSecret = $sandbox
+                ? config('services.melhor_envio.client_secret_sandbox')
+                : config('services.melhor_envio.client_secret_prod');
+            
+            // Se tem client_id e client_secret no .env, criar registro no banco
+            if ($clientId && $clientSecret) {
+                $this->settings = MelhorEnvioSetting::create([
+                    'client_id' => $clientId,
+                    'client_secret' => $clientSecret,
+                    'origin_postal_code' => config('services.melhor_envio.origin_cep', '13400710'),
+                    'sandbox_mode' => $sandbox,
+                ]);
+            } else {
+                // Criar instância temporária apenas para referência (não salva no banco)
+                $this->settings = new MelhorEnvioSetting([
+                    'client_id' => $clientId,
+                    'client_secret' => $clientSecret,
+                    'origin_postal_code' => config('services.melhor_envio.origin_cep', '13400710'),
+                    'sandbox_mode' => $sandbox,
+                ]);
+            }
         }
         
         $this->baseUrl = $this->settings && $this->settings->sandbox_mode
@@ -41,7 +58,7 @@ class MelhorEnvioService
     public function getAuthorizationUrl(string $redirectUri, string $state): string
     {
         if (!$this->settings) {
-            throw new \Exception('Melhor Envio não configurado');
+            throw MelhorEnvioException::authenticationFailed('Configurações não encontradas');
         }
 
         $params = http_build_query([
@@ -65,7 +82,7 @@ class MelhorEnvioService
     public function authenticate(string $code, string $redirectUri): array
     {
         if (!$this->settings) {
-            throw new \Exception('Melhor Envio não configurado');
+            throw MelhorEnvioException::authenticationFailed('Configurações não encontradas');
         }
 
         $tokenUrl = $this->settings->sandbox_mode
@@ -82,7 +99,11 @@ class MelhorEnvioService
 
         if ($response->failed()) {
             Log::error('Melhor Envio OAuth failed', ['response' => $response->json()]);
-            throw new \Exception('Falha na autenticação: ' . $response->body());
+            throw MelhorEnvioException::apiError(
+                'Falha na autenticação',
+                $response->status(),
+                $response->json()
+            );
         }
 
         $data = $response->json();
@@ -103,7 +124,7 @@ class MelhorEnvioService
     public function refreshToken(): array
     {
         if (!$this->settings || !$this->settings->refresh_token) {
-            throw new \Exception('Refresh token não disponível');
+            throw MelhorEnvioException::tokenNotAvailable();
         }
 
         $tokenUrl = $this->settings->sandbox_mode
@@ -119,7 +140,11 @@ class MelhorEnvioService
 
         if ($response->failed()) {
             Log::error('Melhor Envio refresh token failed', ['response' => $response->json()]);
-            throw new \Exception('Falha ao renovar token: ' . $response->body());
+            throw MelhorEnvioException::apiError(
+                'Falha ao renovar token',
+                $response->status(),
+                $response->json()
+            );
         }
 
         $data = $response->json();
@@ -138,18 +163,41 @@ class MelhorEnvioService
      */
     private function getAccessToken(): string
     {
+        if (!$this->settings) {
+            throw MelhorEnvioException::tokenNotAvailable();
+        }
+
         // Se tem bearer token (método direto), usar ele
-        if ($this->settings && $this->settings->bearer_token) {
+        if ($this->settings->bearer_token) {
             return $this->settings->bearer_token;
         }
 
         // Senão, usar OAuth (access_token)
-        if (!$this->settings || !$this->settings->access_token) {
-            throw new \Exception('Melhor Envio não autenticado. Configure o Bearer Token ou OAuth primeiro.');
+        if (!$this->settings->access_token) {
+            // Se tem client_id e client_secret, mas não tem token, precisa autenticar primeiro
+            if ($this->settings->client_id && $this->settings->client_secret) {
+                throw MelhorEnvioException::authenticationFailed(
+                    'Client ID e Secret configurados, mas token OAuth não obtido. Execute o fluxo de autenticação OAuth primeiro.'
+                );
+            }
+            
+            throw MelhorEnvioException::tokenNotAvailable();
         }
 
+        // Verificar se token expirou e renovar se necessário
         if ($this->settings->isTokenExpired()) {
-            $this->refreshToken();
+            try {
+                $this->refreshToken();
+                // Recarregar settings após refresh
+                $this->settings->refresh();
+            } catch (\Exception $e) {
+                Log::error('Erro ao renovar token Melhor Envio', [
+                    'error' => $e->getMessage(),
+                ]);
+                throw MelhorEnvioException::authenticationFailed(
+                    'Token expirado e não foi possível renovar. Execute o fluxo de autenticação OAuth novamente.'
+                );
+            }
         }
 
         return $this->settings->access_token;
@@ -161,7 +209,7 @@ class MelhorEnvioService
     public function calculateShipping(string $toPostalCode, array $products): array
     {
         if (!$this->settings || !$this->settings->origin_postal_code) {
-            throw new \Exception('CEP de origem não configurado');
+            throw MelhorEnvioException::shippingCalculationFailed('CEP de origem não configurado');
         }
 
         $token = $this->getAccessToken();
@@ -185,7 +233,10 @@ class MelhorEnvioService
                 'status' => $response->status(),
                 'response' => $response->json()
             ]);
-            throw new \Exception('Erro ao calcular frete: ' . $response->body());
+            throw MelhorEnvioException::shippingCalculationFailed(
+                $response->body(),
+                ['status' => $response->status(), 'response' => $response->json()]
+            );
         }
 
         return $this->formatShippingOptions($response->json());
@@ -308,7 +359,11 @@ class MelhorEnvioService
 
         if ($response->failed()) {
             Log::error('Melhor Envio create shipment failed', ['response' => $response->json()]);
-            throw new \Exception('Erro ao criar envio: ' . $response->body());
+            throw MelhorEnvioException::apiError(
+                'Erro ao criar envio',
+                $response->status(),
+                $response->json()
+            );
         }
 
         return $response->json();
@@ -317,6 +372,43 @@ class MelhorEnvioService
     /**
      * Track shipment
      */
+    /**
+     * Buscar dados de um envio pelo ID do Melhor Envio
+     * 
+     * @param string $orderId ID do pedido no Melhor Envio
+     * @return array|null Dados do envio ou null se não encontrado
+     */
+    public function getShipment(string $orderId): ?array
+    {
+        try {
+            $token = $this->getAccessToken();
+            
+            if (!$token) {
+                throw new MelhorEnvioException('Token não disponível');
+            }
+
+            $response = Http::withToken($token)
+                ->get($this->baseUrl . '/api/v2/me/shipment/' . $orderId);
+
+            if ($response->successful()) {
+                return $response->json();
+            }
+
+            Log::error('Melhor Envio getShipment failed', [
+                'order_id' => $orderId,
+                'response' => $response->json(),
+            ]);
+
+            return null;
+        } catch (\Exception $e) {
+            Log::error('Error getting Melhor Envio shipment', [
+                'order_id' => $orderId,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
     public function trackShipment(string $trackingCode): array
     {
         $token = $this->getAccessToken();
@@ -328,7 +420,11 @@ class MelhorEnvioService
 
         if ($response->failed()) {
             Log::error('Melhor Envio tracking failed', ['response' => $response->json()]);
-            throw new \Exception('Erro ao rastrear envio: ' . $response->body());
+            throw MelhorEnvioException::apiError(
+                'Erro ao rastrear envio',
+                $response->status(),
+                $response->json()
+            );
         }
 
         return $response->json();

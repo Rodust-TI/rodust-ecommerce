@@ -21,6 +21,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             'api/*',
         ]);
+        
+        // Middleware para forçar reset de senha
+        $middleware->alias([
+            'require.password.reset' => \App\Http\Middleware\RequirePasswordReset::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

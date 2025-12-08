@@ -10,6 +10,8 @@ use App\Services\Payment\CustomerDataFormatter;
 use App\Services\Bling\BlingOrderService;
 use App\Models\Order;
 use App\Models\Customer;
+use App\Exceptions\MercadoPagoException;
+use App\Exceptions\BlingException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -37,20 +39,49 @@ class PaymentController extends Controller
         try {
             $customer = Customer::findOrFail($request->customer_id);
             
-            // Criar pedido
+            // IMPORTANTE: Criar pedido no Bling ANTES de processar pagamento
+            // para evitar que o cliente pague um pedido que não pode ser criado no Bling
+            // Primeiro, criar o pedido temporariamente no Laravel para obter o número
             $order = $this->orderCreation->createFromRequest($request, $customer, 'pix');
+            
+            // Tentar criar no Bling ANTES de processar pagamento
+            try {
+                $blingResult = $this->blingOrder->createOrder($order);
+                
+                if ($blingResult['success']) {
+                    // Pedido criado no Bling com sucesso - associar ID
+                    $order->update([
+                        'bling_order_number' => $blingResult['bling_order_number'],
+                        'bling_synced_at' => now(),
+                    ]);
+                    Log::info('Pedido criado no Bling antes do pagamento PIX', [
+                        'order_id' => $order->id,
+                        'bling_order_number' => $blingResult['bling_order_number']
+                    ]);
+                } else {
+                    // Erro ao criar no Bling - verificar se é duplicação
+                    throw new \Exception('Erro ao criar pedido no Bling: ' . ($blingResult['error'] ?? 'Unknown error'));
+                }
+            } catch (\App\Exceptions\BlingDuplicateOrderException $e) {
+                // Pedido duplicado - deletar pedido do Laravel e retornar erro
+                DB::rollBack();
+                $order->delete(); // Deletar pedido criado
+                
+                Log::warning('Pedido duplicado no Bling - cancelando criação', [
+                    'order_number' => $e->getOrderNumber()
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Este pedido já foi processado anteriormente. Por favor, verifique seus pedidos ou tente novamente em alguns instantes.',
+                    'title' => 'Pedido Duplicado',
+                    'message_type' => 'error',
+                ], 409); // 409 Conflict
+            }
 
             // Gerar pagamento PIX
             $customerData = $this->customerFormatter->formatForMercadoPago($customer);
             $pixResult = $this->mercadoPago->createPixPayment($order, $customerData);
-
-            if (!$pixResult['success']) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => $pixResult['error']
-                ], 400);
-            }
 
             // Atualizar pedido com ID do pagamento
             $order->update([
@@ -58,25 +89,42 @@ class PaymentController extends Controller
                 'payment_status' => $pixResult['status']
             ]);
 
-            // Criar pedido no Bling
-            $blingResult = $this->blingOrder->createOrder($order);
-            if ($blingResult['success']) {
-                $order->update([
-                    'bling_order_number' => $blingResult['bling_order_number'],
-                    'bling_synced_at' => now()
-                ]);
-                Log::info('Pedido sincronizado com Bling', [
-                    'order_id' => $order->id,
-                    'bling_order_number' => $blingResult['bling_order_number']
-                ]);
-            } else {
-                Log::warning('Falha ao criar pedido no Bling (pedido Laravel criado)', [
-                    'order_id' => $order->id,
-                    'error' => $blingResult['error']
-                ]);
-            }
+            // Pedido já está no Bling (criado acima), então não precisa criar novamente
+            Log::info('Pedido PIX criado - aguardando aprovação do pagamento', [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'payment_id' => $pixResult['payment_id'],
+                'bling_order_number' => $order->bling_order_number
+            ]);
 
             DB::commit();
+            
+        } catch (MercadoPagoException $e) {
+            DB::rollBack();
+            
+            $context = $e->getContext();
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'title' => $context['title'] ?? 'Erro no pagamento',
+                'message_type' => $context['message_type'] ?? 'error',
+                'field' => $context['field'] ?? null,
+                'can_retry' => $context['can_retry'] ?? false,
+                'should_change_payment' => $context['should_change_payment'] ?? false,
+            ], $e->getStatusCode());
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Erro inesperado ao criar pagamento PIX', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro interno do servidor. Tente novamente em alguns instantes.'
+            ], 500);
+        }
 
             Log::info('Pedido PIX criado', [
                 'order_id' => $order->id,
@@ -125,18 +173,6 @@ class PaymentController extends Controller
                 ]
             ]);
 
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Erro ao criar pedido PIX', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Erro ao processar pedido: ' . $e->getMessage()
-            ], 500);
-        }
     }
 
     /**
@@ -148,36 +184,62 @@ class PaymentController extends Controller
 
         try {
             $customer = Customer::findOrFail($request->customer_id);
+            
+            // IMPORTANTE: Criar pedido no Bling ANTES de processar pagamento
+            // para evitar que o cliente pague um pedido que não pode ser criado no Bling
+            // Primeiro, criar o pedido temporariamente no Laravel para obter o número
             $order = $this->orderCreation->createFromRequest($request, $customer, 'boleto');
+            
+            // Tentar criar no Bling ANTES de processar pagamento
+            try {
+                $blingResult = $this->blingOrder->createOrder($order);
+                
+                if ($blingResult['success']) {
+                    // Pedido criado no Bling com sucesso - associar ID
+                    $order->update([
+                        'bling_order_number' => $blingResult['bling_order_number'],
+                        'bling_synced_at' => now(),
+                    ]);
+                    Log::info('Pedido criado no Bling antes do pagamento Boleto', [
+                        'order_id' => $order->id,
+                        'bling_order_number' => $blingResult['bling_order_number']
+                    ]);
+                } else {
+                    // Erro ao criar no Bling - verificar se é duplicação
+                    throw new \Exception('Erro ao criar pedido no Bling: ' . ($blingResult['error'] ?? 'Unknown error'));
+                }
+            } catch (\App\Exceptions\BlingDuplicateOrderException $e) {
+                // Pedido duplicado - deletar pedido do Laravel e retornar erro
+                DB::rollBack();
+                $order->delete(); // Deletar pedido criado
+                
+                Log::warning('Pedido duplicado no Bling - cancelando criação', [
+                    'order_number' => $e->getOrderNumber()
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Este pedido já foi processado anteriormente. Por favor, verifique seus pedidos ou tente novamente em alguns instantes.',
+                    'title' => 'Pedido Duplicado',
+                    'message_type' => 'error',
+                ], 409); // 409 Conflict
+            }
 
             $customerData = $this->customerFormatter->formatForMercadoPago($customer);
             $boletoResult = $this->mercadoPago->createBoletoPayment($order, $customerData);
-
-            if (!$boletoResult['success']) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => $boletoResult['error']
-                ], 400);
-            }
 
             $order->update([
                 'payment_id' => $boletoResult['payment_id'],
                 'payment_status' => 'pending'
             ]);
 
-            // Criar pedido no Bling
-            $blingResult = $this->blingOrder->createOrder($order);
-            if ($blingResult['success']) {
-                $order->update([
-                    'bling_order_number' => $blingResult['bling_order_number'],
-                    'bling_synced_at' => now()
-                ]);
-                Log::info('Pedido boleto sincronizado com Bling', [
-                    'order_id' => $order->id,
-                    'bling_order_number' => $blingResult['bling_order_number']
-                ]);
-            }
+            // Pedido já está no Bling (criado acima), então não precisa criar novamente
+            Log::info('Pedido Boleto criado - aguardando aprovação do pagamento', [
+                'order_id' => $order->id,
+                'order_number' => $order->order_number,
+                'payment_id' => $boletoResult['payment_id'],
+                'bling_order_number' => $order->bling_order_number
+            ]);
 
             DB::commit();
 
@@ -213,16 +275,24 @@ class PaymentController extends Controller
                 ]
             ]);
 
+        } catch (MercadoPagoException $e) {
+            DB::rollBack();
+            
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], $e->getStatusCode());
+            
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Erro ao criar boleto', [
+            Log::error('Erro inesperado ao criar boleto', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Erro ao processar boleto: ' . $e->getMessage()
+                'message' => 'Erro interno do servidor. Tente novamente em alguns instantes.'
             ], 500);
         }
     }
@@ -257,27 +327,23 @@ class PaymentController extends Controller
 
             $cardResult = $this->mercadoPago->createCardPayment($order, $customerData, $cardData);
 
-            if (!$cardResult['success']) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => $cardResult['error']
-                ], 400);
-            }
-
             $order->update([
                 'payment_id' => $cardResult['payment_id'],
                 'payment_status' => $cardResult['status']
             ]);
 
-            // Se aprovado, criar pedido no Bling
+            // Se aprovado, atualizar status e paid_at ANTES de enviar ao Bling
             if ($cardResult['approved']) {
+                $order->update([
+                    'status' => 'processing',
+                    'paid_at' => now()
+                ]);
+                
                 $blingResult = $this->blingOrder->createOrder($order);
                 if ($blingResult['success']) {
                     $order->update([
                         'bling_order_number' => $blingResult['bling_order_number'],
-                        'bling_synced_at' => now(),
-                        'status' => 'processing'
+                        'bling_synced_at' => now()
                     ]);
                     Log::info('Pedido cartão sincronizado com Bling', [
                         'order_id' => $order->id,
@@ -292,14 +358,19 @@ class PaymentController extends Controller
                 'order_id' => $order->id,
                 'order_number' => $order->order_number,
                 'payment_id' => $cardResult['payment_id'],
-                'status' => $cardResult['status']
+                'status' => $cardResult['status'],
+                'status_detail' => $cardResult['status_detail'] ?? null
             ]);
 
             $order->load(['customer', 'items.product']);
 
             return response()->json([
                 'success' => true,
-                'message' => $cardResult['approved'] ? 'Pagamento aprovado!' : 'Pagamento em análise',
+                'message' => $cardResult['message'] ?? ($cardResult['approved'] ? 'Pagamento aprovado!' : 'Pagamento em análise'),
+                'title' => $cardResult['title'] ?? ($cardResult['approved'] ? 'Sucesso!' : 'Pagamento pendente'),
+                'message_type' => $cardResult['message_type'] ?? ($cardResult['approved'] ? 'success' : 'warning'),
+                'can_retry' => $cardResult['can_retry'] ?? false,
+                'should_change_payment' => $cardResult['should_change_payment'] ?? false,
                 'data' => [
                     'order' => [
                         'id' => $order->id,
@@ -321,6 +392,20 @@ class PaymentController extends Controller
                 ]
             ]);
 
+        } catch (MercadoPagoException $e) {
+            DB::rollBack();
+            
+            $context = $e->getContext();
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'title' => $context['title'] ?? 'Erro no pagamento',
+                'message_type' => $context['message_type'] ?? 'error',
+                'field' => $context['field'] ?? null,
+                'can_retry' => $context['can_retry'] ?? false,
+                'should_change_payment' => $context['should_change_payment'] ?? false,
+            ], $e->getStatusCode());
+            
         } catch (\Illuminate\Validation\ValidationException $e) {
             DB::rollBack();
             return response()->json([
@@ -331,14 +416,14 @@ class PaymentController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Erro ao processar pagamento com cartão', [
+            Log::error('Erro inesperado ao processar pagamento com cartão', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Erro ao processar pagamento: ' . $e->getMessage()
+                'message' => 'Erro interno do servidor. Tente novamente em alguns instantes.'
             ], 500);
         }
     }

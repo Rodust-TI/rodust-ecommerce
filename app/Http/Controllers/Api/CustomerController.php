@@ -107,10 +107,24 @@ class CustomerController extends Controller
         // Buscar cliente
         $customer = Customer::where('email', $validated['email'])->first();
 
-        // Verificar senha
-        if (!$customer || !Hash::check($validated['password'], $customer->password)) {
+        // Verificar se o cliente existe
+        if (!$customer) {
             throw ValidationException::withMessages([
                 'email' => ['Email ou senha incorretos.']
+            ]);
+        }
+
+        // Verificar senha
+        if (!Hash::check($validated['password'], $customer->password)) {
+            throw ValidationException::withMessages([
+                'email' => ['Email ou senha incorretos.']
+            ]);
+        }
+
+        // Verificar se a conta precisa redefinir senha (recuperação de desastre)
+        if ($customer->must_reset_password) {
+            throw ValidationException::withMessages([
+                'email' => ['Sua conta foi recuperada. Por favor, clique em "Esqueci minha senha" para criar uma nova senha.']
             ]);
         }
 
@@ -153,6 +167,90 @@ class CustomerController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Logout realizado com sucesso!'
+        ]);
+    }
+
+    /**
+     * Solicitar redefinição de senha (Esqueci minha senha)
+     * POST /api/customers/forgot-password
+     */
+    public function forgotPassword(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $customer = Customer::where('email', $validated['email'])->first();
+
+        if (!$customer) {
+            // Não revelar se o email existe ou não (segurança)
+            return response()->json([
+                'success' => true,
+                'message' => 'Se o email estiver cadastrado, você receberá um link para redefinir sua senha.',
+            ]);
+        }
+
+        // Gerar token de reset
+        $resetToken = Str::random(64);
+        
+        $customer->update([
+            'password_reset_token' => $resetToken,
+            'password_reset_token_expires_at' => now()->addHours(1),
+        ]);
+
+        // URL de reset (WordPress)
+        $resetUrl = config('urls.wordpress.reset_password') . '?token=' . $resetToken;
+
+        // Enviar email
+        try {
+            Mail::to($customer->email)->send(new \App\Mail\PasswordResetMail($customer, $resetUrl));
+        } catch (\Exception $e) {
+            Log::error('Erro ao enviar email de recuperação de senha', [
+                'customer_id' => $customer->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Se o email estiver cadastrado, você receberá um link para redefinir sua senha.',
+        ]);
+    }
+
+    /**
+     * Redefinir senha com token
+     * POST /api/customers/reset-password
+     */
+    public function resetPassword(Request $request)
+    {
+        $validated = $request->validate([
+            'token' => 'required|string|size:64',
+            'password' => 'required|string|min:6|confirmed',
+        ]);
+
+        $customer = Customer::where('password_reset_token', $validated['token'])
+            ->where('password_reset_token_expires_at', '>', now())
+            ->first();
+
+        if (!$customer) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Token inválido ou expirado. Solicite um novo link de recuperação.',
+            ], 400);
+        }
+
+        // Atualizar senha e limpar flags de reset
+        $customer->update([
+            'password' => Hash::make($validated['password']), // Hash da senha
+            'password_reset_token' => null,
+            'password_reset_token_expires_at' => null,
+            'must_reset_password' => false,
+            'email_verified_at' => $customer->email_verified_at ?? now(), // Verificar email automaticamente
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Senha redefinida com sucesso! Você já pode fazer login.',
         ]);
     }
 
@@ -320,6 +418,13 @@ class CustomerController extends Controller
         $customer = $request->user();
 
         try {
+            // LOG TEMPORÁRIO PARA DEBUG
+            Log::info('UpdateProfile - Dados recebidos', [
+                'customer_id' => $customer->id,
+                'validated_data' => $request->validated(),
+                'all_request_data' => $request->all()
+            ]);
+
             // Atualizar dados
             $customer->update($request->validated());
 

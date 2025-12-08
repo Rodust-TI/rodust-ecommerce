@@ -60,6 +60,15 @@ interface ERPInterface
     public function createOrder(array $orderData): ?string;
 
     /**
+     * Atualizar pedido no ERP
+     * 
+     * @param string $erpOrderId ID ou número do pedido no ERP
+     * @param array $orderData Dados completos do pedido normalizados (PUT requer todos os campos)
+     * @return bool Sucesso da operação
+     */
+    public function updateOrder(string $erpOrderId, array $orderData): bool;
+
+    /**
      * Atualizar estoque de um produto
      * 
      * @param string $erpId ID do produto no ERP

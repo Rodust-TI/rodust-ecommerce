@@ -210,7 +210,7 @@ class BlingSyncProducts extends Command
             // Buscar produtos do Laravel
             $products = Product::where('active', true)->get();
             
-            $wpUrl = rtrim(config('urls.wordpress.external'), '/');
+            $wpUrl = rtrim(config('services.wordpress.sync_url'), '/');
             
             foreach ($products as $product) {
                 // Enviar para API do WordPress

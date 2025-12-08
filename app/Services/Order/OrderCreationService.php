@@ -42,6 +42,7 @@ class OrderCreationService
             'total' => $total,
             'shipping_address' => $request->shipping_address,
             'shipping_method_name' => $request->shipping_method['name'] ?? null,
+            'shipping_carrier' => $request->shipping_method['company'] ?? null,
             'notes' => $this->formatShippingAddressNotes($request->shipping_address),
         ]);
 

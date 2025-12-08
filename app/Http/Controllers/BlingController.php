@@ -23,7 +23,8 @@ class BlingController extends Controller
         // 12288 = Produtos
         // 28672 = Pedidos
         // 14336 = Notas Fiscais
-        $scopes = '12288 20480 28672'; // Produtos, Contatos, Pedidos
+        // 32768 = Situações
+        $scopes = '12288 20480 28672 32768'; // Produtos, Contatos, Pedidos, Situações
 
         $params = http_build_query([
             'response_type' => 'code',
@@ -536,6 +537,62 @@ class BlingController extends Controller
     }
     
     /**
+     * API: Listar formas de pagamento do Bling
+     */
+    public function apiListPaymentMethods()
+    {
+        try {
+            $token = Cache::get('bling_access_token');
+
+            if (!$token) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token de acesso não encontrado. Reconecte ao Bling.'
+                ], 401);
+            }
+
+            // Usar o BlingV3Adapter para obter as formas de pagamento
+            $adapter = app(\App\Services\ERP\BlingV3Adapter::class);
+            $paymentMethods = $adapter->getPaymentMethods();
+
+            if (empty($paymentMethods)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Nenhuma forma de pagamento encontrada no Bling.'
+                ]);
+            }
+
+            // Obter IDs configurados no .env
+            $configuredMethods = [
+                'pix' => config('services.bling.payment_methods.pix'),
+                'credit_card' => config('services.bling.payment_methods.credit_card'),
+                'debit_card' => config('services.bling.payment_methods.debit_card'),
+                'boleto' => config('services.bling.payment_methods.boleto'),
+                'default' => config('services.bling.payment_methods.default'),
+            ];
+
+            // Remover valores nulos
+            $configuredMethods = array_filter($configuredMethods);
+
+            return response()->json([
+                'success' => true,
+                'payment_methods' => $paymentMethods,
+                'configured_methods' => $configuredMethods
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Erro ao listar formas de pagamento: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
      * API: Sincronizar pedidos Laravel → Bling
      * Envia pedidos pendentes de sincronização para o Bling
      */
@@ -605,6 +662,51 @@ class BlingController extends Controller
                     ]);
                     $synced++;
                 } else {
+                    // Verificar se o erro é "pedido já existe" - tentar buscar no Bling
+                    $errorMsg = $result['error'] ?? '';
+                    if (strpos($errorMsg, 'idênticas') !== false || strpos($errorMsg, 'duplicado') !== false) {
+                        // Pedido pode já existir no Bling - tentar buscar pelo número
+                        Log::info('Tentando buscar pedido existente no Bling', [
+                            'order_number' => $order->order_number
+                        ]);
+                        
+                        // Buscar pedidos recentes no Bling e procurar pelo número
+                        try {
+                            $bling = app(\App\Services\ERP\BlingV3Adapter::class);
+                            $blingOrders = $bling->getOrders([
+                                'dataInicial' => $order->created_at->subDays(1)->format('Y-m-d'),
+                                'dataFinal' => now()->format('Y-m-d'),
+                            ]);
+                            
+                            foreach ($blingOrders as $blingOrder) {
+                                // O número no Bling pode ser diferente (ex: apenas "3" ao invés de "ROD-20251205-2188")
+                                // Verificar pelo total e data
+                                $blingTotal = $blingOrder['total'] ?? 0;
+                                $blingDate = $blingOrder['data'] ?? '';
+                                
+                                if (abs($blingTotal - $order->total) < 0.01 && 
+                                    $blingDate === $order->created_at->format('Y-m-d')) {
+                                    // Provavelmente é o mesmo pedido
+                                    $order->update([
+                                        'bling_order_number' => (string) $blingOrder['id'],
+                                        'bling_synced_at' => now(),
+                                    ]);
+                                    $synced++;
+                                    Log::info('Pedido encontrado no Bling e associado', [
+                                        'order_number' => $order->order_number,
+                                        'bling_order_id' => $blingOrder['id']
+                                    ]);
+                                    continue 2; // Pular para próximo pedido
+                                }
+                            }
+                        } catch (\Exception $e) {
+                            Log::error('Erro ao buscar pedido no Bling', [
+                                'order_number' => $order->order_number,
+                                'error' => $e->getMessage()
+                            ]);
+                        }
+                    }
+                    
                     $errors[] = [
                         'order_number' => $order->order_number,
                         'error' => $result['error']
@@ -629,6 +731,237 @@ class BlingController extends Controller
                 'trace' => $e->getTraceAsString()
             ]);
             
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Obter clientes do Bling e criar/atualizar no Laravel
+     * Executa o comando bling:sync-customers-from-bling
+     */
+    public function apiGetCustomersFromBling(Request $request)
+    {
+        try {
+            $limit = $request->input('limit', 20);
+            
+            // Executar o comando Artisan e capturar output
+            \Artisan::call('bling:sync-customers-from-bling', [
+                '--limit' => $limit
+            ]);
+            
+            $output = \Artisan::output();
+            
+            // Extrair estatísticas do output (simples parsing de texto)
+            $created = 0;
+            $updated = 0;
+            $skipped = 0;
+            $errors = 0;
+            
+            if (preg_match('/Criados:\s+(\d+)/', $output, $matches)) {
+                $created = (int) $matches[1];
+            }
+            if (preg_match('/Atualizados:\s+(\d+)/', $output, $matches)) {
+                $updated = (int) $matches[1];
+            }
+            if (preg_match('/Ignorados:\s+(\d+)/', $output, $matches)) {
+                $skipped = (int) $matches[1];
+            }
+            if (preg_match('/Erros:\s+(\d+)/', $output, $matches)) {
+                $errors = (int) $matches[1];
+            }
+            
+            $total = $created + $updated;
+            
+            return response()->json([
+                'success' => true,
+                'message' => "Sincronização concluída: {$total} cliente(s) processado(s)",
+                'stats' => [
+                    'created' => $created,
+                    'updated' => $updated,
+                    'skipped' => $skipped,
+                    'errors' => $errors,
+                ],
+                'output' => $output
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Erro ao obter clientes do Bling', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Buscar e armazenar status do Bling
+     */
+    public function fetchStatuses()
+    {
+        try {
+            $statusService = app(\App\Services\Bling\BlingStatusService::class);
+            
+            // Buscar módulo de vendas
+            $moduleId = $statusService->getSalesModuleId();
+            
+            if (!$moduleId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Não foi possível encontrar o módulo de Vendas no Bling'
+                ], 404);
+            }
+
+            // Buscar situações
+            $statuses = $statusService->getSalesStatuses();
+            
+            if (empty($statuses)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Nenhum status encontrado no Bling'
+                ], 404);
+            }
+
+            // Formatar resposta
+            $formattedStatuses = [];
+            foreach ($statuses as $id => $details) {
+                $formattedStatuses[$id] = [
+                    'nome' => $details['nome'],
+                    'cor' => $details['cor'],
+                    'herdado' => $details['herdado'],
+                    'internal_status' => $statusService->mapBlingStatusToInternal(['id' => $id])
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'module_id' => $moduleId,
+                'count' => count($formattedStatuses),
+                'statuses' => $formattedStatuses
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao buscar status do Bling', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Sincronizar status de pedidos
+     */
+    public function syncOrderStatuses(Request $request)
+    {
+        try {
+            $orderService = app(\App\Services\Bling\BlingOrderService::class);
+            
+            // Sempre sincronizar TODOS os pedidos (sem limite)
+            $result = $orderService->syncAllPendingOrders(null);
+
+            return response()->json([
+                'success' => true,
+                'total' => $result['total'],
+                'synced' => $result['synced'],
+                'failed' => $result['failed']
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao sincronizar status de pedidos', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Limpar cache de status
+     */
+    public function clearStatusCache()
+    {
+        try {
+            $statusService = app(\App\Services\Bling\BlingStatusService::class);
+            $statusService->clearCache();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Cache de status limpo com sucesso'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao limpar cache de status', [
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * API: Buscar logs de webhooks recentes
+     */
+    public function apiWebhookLogs(Request $request)
+    {
+        try {
+            $limit = $request->input('limit', 50);
+            $source = $request->input('source'); // 'bling', 'mercadopago', etc
+            
+            $query = \App\Models\WebhookLog::query();
+            
+            if ($source) {
+                $query->where('source', $source);
+            }
+            
+            // Ordenar por ID desc para polling eficiente (logs mais recentes primeiro)
+            $logs = $query->orderBy('id', 'desc')->limit($limit)->get();
+            
+            return response()->json([
+                'success' => true,
+                'logs' => $logs->map(function ($log) {
+                    return [
+                        'id' => $log->id,
+                        'source' => $log->source,
+                        'event_id' => $log->event_id,
+                        'event_type' => $log->event_type,
+                        'resource' => $log->resource,
+                        'action' => $log->action,
+                        'status' => $log->status,
+                        'response_code' => $log->response_code,
+                        'error_message' => $log->error_message,
+                        'metadata' => $log->metadata,
+                        'created_at' => $log->created_at,
+                        'processed_at' => $log->processed_at,
+                        'created_at' => $log->created_at->toIso8601String(),
+                        'processed_at' => $log->processed_at?->toIso8601String(),
+                    ];
+                }),
+                'total' => $logs->count()
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao buscar logs de webhooks', [
+                'error' => $e->getMessage()
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()

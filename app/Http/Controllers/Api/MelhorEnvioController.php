@@ -4,6 +4,8 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Services\MelhorEnvioService;
+use App\Services\Webhook\MelhorEnvioWebhookHandler;
+use App\Services\Webhook\WebhookLogService;
 use App\Models\MelhorEnvioSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -13,8 +15,10 @@ class MelhorEnvioController extends Controller
 {
     private MelhorEnvioService $melhorEnvioService;
 
-    public function __construct(MelhorEnvioService $melhorEnvioService)
-    {
+    public function __construct(
+        MelhorEnvioService $melhorEnvioService,
+        private MelhorEnvioWebhookHandler $webhookHandler
+    ) {
         $this->melhorEnvioService = $melhorEnvioService;
     }
 
@@ -117,31 +121,44 @@ class MelhorEnvioController extends Controller
      */
     public function webhook(Request $request)
     {
-        Log::info('Melhor Envio webhook received', $request->all());
+        $startTime = microtime(true);
+        $payload = $request->all();
+        
+        // Criar log do webhook
+        $logService = app(\App\Services\Webhook\WebhookLogService::class);
+        $webhookLog = $logService->createLog('melhorenvio', $request, $payload);
+        
+        Log::info('Melhor Envio webhook received', [
+            'webhook_log_id' => $webhookLog->id,
+            'event' => $payload['event'] ?? null,
+            'order_id' => $payload['order_id'] ?? null,
+        ]);
+        
+        // Marcar como processing
+        $logService->markAsProcessing($webhookLog);
+        
+        try {
+            // Processar webhook usando handler dedicado (desacoplado)
+            $event = $request->input('event');
+            
+            $this->webhookHandler->handle($payload, $event, $webhookLog);
+            
+            $logService->markAsSuccess($webhookLog, '{"success": true}', 200, [
+                'processing_time_ms' => round((microtime(true) - $startTime) * 1000, 2),
+            ]);
 
-        // Process webhook based on event type
-        $event = $request->input('event');
-        $orderId = $request->input('order_id');
-
-        switch ($event) {
-            case 'order.created':
-                // Handle order created
-                break;
-            case 'order.generated':
-                // Handle label generated
-                break;
-            case 'order.posted':
-                // Handle order posted
-                break;
-            case 'order.delivered':
-                // Handle order delivered
-                break;
-            case 'order.canceled':
-                // Handle order canceled
-                break;
+            return response()->json(['success' => true]);
+            
+        } catch (\Exception $e) {
+            Log::error('Melhor Envio webhook error', [
+                'webhook_log_id' => $webhookLog->id,
+                'error' => $e->getMessage(),
+            ]);
+            
+            $logService->markAsError($webhookLog, $e->getMessage(), 500);
+            
+            return response()->json(['error' => 'Processing failed'], 500);
         }
-
-        return response()->json(['success' => true]);
     }
 
     /**

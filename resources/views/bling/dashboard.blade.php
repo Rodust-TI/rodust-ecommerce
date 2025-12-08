@@ -99,12 +99,23 @@
                                 </div>
                                 <div>
                                     <h3 class="font-semibold text-gray-900 text-sm">Pedidos</h3>
-                                    <p class="text-xs text-gray-500">Enviar para Bling</p>
+                                    <p class="text-xs text-gray-500">Gerenciar pedidos</p>
                                 </div>
                             </div>
-                            <button onclick="syncOrders()" class="w-full px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-medium transition-colors">
-                                📦 Sincronizar Pedidos
-                            </button>
+                            <div class="space-y-2">
+                                <button onclick="syncOrders()" class="w-full px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-medium transition-colors">
+                                    📦 Sincronizar Pedidos
+                                </button>
+                                <button onclick="fetchBlingStatuses()" class="w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-medium transition-colors">
+                                    🔍 Buscar Status do Bling
+                                </button>
+                                <button onclick="syncOrderStatuses()" class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-colors">
+                                    🔄 Atualizar Status
+                                </button>
+                                <button onclick="clearStatusCache()" class="w-full px-3 py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded text-xs font-medium transition-colors">
+                                    🗑️ Limpar Cache Status
+                                </button>
+                            </div>
                         </div>
                         <div class="col-span-12 md:col-span-8 lg:col-span-9 bg-gray-900">
                             <div class="flex justify-between items-center px-4 py-2 border-b border-gray-700">
@@ -136,8 +147,11 @@
                                 </div>
                             </div>
                             <div class="space-y-2">
-                                <button onclick="syncCustomers()" class="w-full px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs font-medium transition-colors">
-                                    🔄 Sincronizar Agora
+                                <button onclick="sendCustomersToBling()" class="w-full px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs font-medium transition-colors">
+                                    📤 Enviar para Bling
+                                </button>
+                                <button onclick="getCustomersFromBling()" class="w-full px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium transition-colors">
+                                    📥 Obter do Bling
                                 </button>
                                 <button onclick="listContactTypes()" class="w-full px-3 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded text-xs font-medium transition-colors">
                                     📋 Tipos de Contato
@@ -186,6 +200,39 @@
                     </div>
                 </div>
 
+                <!-- Pagamentos -->
+                <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
+                    <div class="grid grid-cols-12 gap-0">
+                        <div class="col-span-12 md:col-span-4 lg:col-span-3 p-4 border-r border-gray-200">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center text-xl">
+                                    💳
+                                </div>
+                                <div>
+                                    <h3 class="font-semibold text-gray-900 text-sm">Pagamentos</h3>
+                                    <p class="text-xs text-gray-500">Formas de pagamento</p>
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <button onclick="listPaymentMethods()" class="w-full px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded text-xs font-medium transition-colors">
+                                    📋 Listar Formas de Pagamento
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-span-12 md:col-span-8 lg:col-span-9 bg-gray-900">
+                            <div class="flex justify-between items-center px-4 py-2 border-b border-gray-700">
+                                <span class="text-teal-400 text-xs font-semibold">● Console Pagamentos</span>
+                                <button onclick="clearPaymentsConsole()" class="text-gray-400 hover:text-white text-xs px-2 py-1 hover:bg-gray-800 rounded">
+                                    🗑️
+                                </button>
+                            </div>
+                            <div id="payments-console" class="p-4 text-white font-mono text-xs space-y-1 h-[250px] overflow-y-auto">
+                                <div class="text-gray-500">Aguardando ação...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Notas Fiscais -->
                 <div class="bg-white rounded-lg shadow-sm border overflow-hidden opacity-50">
                     <div class="grid grid-cols-12 gap-0">
@@ -215,28 +262,66 @@
                 </div>
             </div>
 
-            <!-- Console Global de Webhooks (100% largura) -->
-            <div class="mt-6 bg-gray-950 rounded-lg shadow-lg border border-gray-700 overflow-hidden">
-                <div class="flex justify-between items-center px-4 py-3 border-b border-gray-700 bg-gray-900">
-                    <div class="flex items-center gap-3">
-                        <span class="text-indigo-400 text-sm font-bold">⚡ WEBHOOKS - Logs em Tempo Real</span>
-                        <span class="text-gray-500 text-xs">(eventos automáticos do Bling e Mercado Pago)</span>
+            <!-- Consoles Separados de Webhooks -->
+            <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <!-- Console Bling -->
+                <div class="bg-gray-950 rounded-lg shadow-lg border border-gray-700 overflow-hidden">
+                    <div class="flex justify-between items-center px-4 py-3 border-b border-gray-700 bg-gray-900">
+                        <div class="flex items-center gap-3">
+                            <span class="text-indigo-400 text-sm font-bold">⚡ BLING WEBHOOKS</span>
+                            <span class="text-gray-500 text-xs">(eventos automáticos)</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="clearBlingWebhooksConsole()" class="text-gray-400 hover:text-white text-xs px-2 py-1 hover:bg-gray-800 rounded">
+                                🗑️ Limpar
+                            </button>
+                        </div>
                     </div>
-                    <div class="flex gap-2">
-                        <button onclick="testBlingWebhook()" class="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded">
-                            🧪 Testar Webhook Bling
-                        </button>
-                        <button onclick="clearWebhooksConsole()" class="text-gray-400 hover:text-white text-xs px-3 py-1 hover:bg-gray-800 rounded">
-                            🗑️ Limpar
-                        </button>
+                    <div id="bling-webhooks-console" class="p-4 text-white font-mono text-xs space-y-1 h-[400px] overflow-y-auto">
+                        <div class="text-gray-500">Aguardando eventos do Bling...</div>
+                        <div class="text-gray-600 text-xs mt-2">💡 URL: https://sanozukez-rodust-ecommerce.ultrahook.com/api/webhooks/bling</div>
+                        <div class="text-green-600 text-xs mt-2">✅ Sistema de logs ativo</div>
                     </div>
                 </div>
-                <div id="webhooks-console" class="p-4 text-white font-mono text-xs space-y-1 h-[400px] overflow-y-auto">
-                    <div class="text-gray-500">Aguardando eventos de webhook...</div>
-                    <div class="text-gray-600 text-xs mt-2">💡 Webhooks configurados:</div>
-                    <div class="text-gray-600 text-xs ml-4">• Bling: https://localhost:8443/webhook</div>
-                    <div class="text-gray-600 text-xs ml-4">• Mercado Pago: https://floatingly-incipient-paul.ngrok-free.dev/api/webhooks/mercadopago</div>
-                    <div class="text-yellow-600 text-xs mt-2">⚠️ Teste manual pode falhar por CORS, mas webhooks reais do Bling funcionarão normalmente</div>
+
+                <!-- Console Mercado Pago -->
+                <div class="bg-gray-950 rounded-lg shadow-lg border border-gray-700 overflow-hidden">
+                    <div class="flex justify-between items-center px-4 py-3 border-b border-gray-700 bg-gray-900">
+                        <div class="flex items-center gap-3">
+                            <span class="text-green-400 text-sm font-bold">💳 MERCADO PAGO WEBHOOKS</span>
+                            <span class="text-gray-500 text-xs">(notificações de pagamento)</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="clearMercadoPagoWebhooksConsole()" class="text-gray-400 hover:text-white text-xs px-2 py-1 hover:bg-gray-800 rounded">
+                                🗑️ Limpar
+                            </button>
+                        </div>
+                    </div>
+                    <div id="mercadopago-webhooks-console" class="p-4 text-white font-mono text-xs space-y-1 h-[400px] overflow-y-auto">
+                        <div class="text-gray-500">Aguardando eventos do Mercado Pago...</div>
+                        <div class="text-gray-600 text-xs mt-2">💡 Mercado Pago Webhook URL: <span class="text-white">https://sanozukez-mercadopago.ultrahook.com/api/webhooks/mercadopago</span></div>
+                        <div class="text-green-600 text-xs mt-2">✅ Sistema de logs ativo</div>
+                    </div>
+                </div>
+
+                <!-- Console Melhor Envio -->
+                <div class="bg-gray-950 rounded-lg shadow-lg border border-gray-700 overflow-hidden">
+                    <div class="flex justify-between items-center px-4 py-3 border-b border-gray-700 bg-gray-900">
+                        <div class="flex items-center gap-3">
+                            <span class="text-blue-400 text-sm font-bold">🚚 MELHOR ENVIO WEBHOOKS</span>
+                            <span class="text-gray-500 text-xs">(notificações de envio)</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="clearMelhorEnvioWebhooksConsole()" class="text-gray-400 hover:text-white text-xs px-2 py-1 hover:bg-gray-800 rounded">
+                                🗑️ Limpar
+                            </button>
+                        </div>
+                    </div>
+                    <div id="melhorenvio-webhooks-console" class="p-4 text-white font-mono text-xs space-y-1 h-[400px] overflow-y-auto">
+                        <div class="text-gray-500">Aguardando eventos do Melhor Envio...</div>
+                        <div class="text-gray-600 text-xs mt-2">💡 Melhor Envio Webhook URL: <span class="text-white">https://sanozukez-melhorenvio-webhook.ultrahook.com/api/melhor-envio/webhook</span></div>
+                        <div class="text-green-600 text-xs mt-2">✅ Sistema de logs ativo</div>
+                    </div>
                 </div>
             </div>
         </main>
@@ -409,14 +494,14 @@
             }
         }
 
-        async function syncCustomers() {
+        async function sendCustomersToBling() {
             const contentEl = document.getElementById('customers-console');
             
-            if (!confirm('Sincronizar clientes verificados para o Bling?\n\nApenas clientes com email confirmado serão enviados.')) {
+            if (!confirm('📤 ENVIAR CLIENTES PARA BLING\n\nIsso irá enviar clientes verificados do Laravel para o Bling.\nApenas clientes com email confirmado serão enviados.\n\nContinuar?')) {
                 return;
             }
             
-            contentEl.innerHTML = '<div class="text-yellow-400 animate-pulse">Sincronizando clientes... Aguarde...</div>';
+            contentEl.innerHTML = '<div class="text-yellow-400 animate-pulse">⏳ Enviando clientes para o Bling...</div>';
             
             try {
                 const response = await fetch('/bling/api/sync-customers', {
@@ -437,18 +522,65 @@
                 if (data.success) {
                     const output = data.output.split('\n').filter(line => line.trim());
                     contentEl.innerHTML = `
-                        <div class="text-green-400 mb-2">${data.message}</div>
+                        <div class="text-green-400 mb-2">✅ ${data.message}</div>
                         <div class="text-gray-400 text-xs space-y-1">
                             ${output.map(line => `<div>${line}</div>`).join('')}
                         </div>
-                        <div class="text-blue-400 mt-2">Total de clientes: ${data.total_customers}</div>
-                        <div class="text-yellow-400 mt-2">Execute o queue worker para processar: php artisan queue:work</div>
+                        <div class="text-blue-400 mt-2">📊 Total de clientes: ${data.total_customers}</div>
+                        <div class="text-yellow-400 mt-2">⚙️ Execute o queue worker: php artisan queue:work</div>
                     `;
                 } else {
-                    contentEl.innerHTML = `<div class="text-red-400">Erro: ${data.message || 'Erro ao sincronizar clientes'}</div>`;
+                    contentEl.innerHTML = `<div class="text-red-400">❌ ${data.message || 'Erro ao enviar clientes'}</div>`;
                 }
             } catch (error) {
-                contentEl.innerHTML = `<div class="text-red-400">Erro: ${error.message}</div>`;
+                contentEl.innerHTML = `<div class="text-red-400">❌ Erro: ${error.message}</div>`;
+            }
+        }
+
+        async function getCustomersFromBling() {
+            const contentEl = document.getElementById('customers-console');
+            
+            if (!confirm('📥 OBTER CLIENTES DO BLING\n\nIsso irá buscar clientes com tipo "Cliente ecommerce" do Bling e criar/atualizar no Laravel.\n\nClientes novos serão criados sem senha e precisarão:\n• Usar Google OAuth, OU\n• Criar senha no primeiro acesso\n\nContinuar?')) {
+                return;
+            }
+            
+            const limit = prompt('Quantos clientes buscar? (máximo recomendado: 100)', '20');
+            if (!limit) return;
+            
+            contentEl.innerHTML = '<div class="text-green-400 animate-pulse">⏳ Buscando clientes do Bling...</div>';
+            
+            try {
+                const response = await fetch('/bling/api/get-customers-from-bling', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                    },
+                    body: JSON.stringify({
+                        limit: parseInt(limit)
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    let output = `<div class="text-green-400 mb-2">✅ ${data.message}</div>`;
+                    output += `<div class="text-gray-400">─────────────────────────────</div>`;
+                    output += `<div class="text-white mt-2">📊 Estatísticas:</div>`;
+                    output += `<div class="text-green-400 ml-4">✅ Criados: ${data.stats.created}</div>`;
+                    output += `<div class="text-blue-400 ml-4">🔄 Atualizados: ${data.stats.updated}</div>`;
+                    output += `<div class="text-gray-400 ml-4">⏭️ Ignorados: ${data.stats.skipped}</div>`;
+                    if (data.stats.errors > 0) {
+                        output += `<div class="text-red-400 ml-4">❌ Erros: ${data.stats.errors}</div>`;
+                    }
+                    output += `<div class="text-yellow-400 mt-3">⚠️ Clientes novos precisam criar senha no primeiro acesso.</div>`;
+                    output += `<div class="text-blue-400 mt-2">💡 Eles podem usar Google OAuth para fazer login automaticamente.</div>`;
+                    contentEl.innerHTML = output;
+                } else {
+                    contentEl.innerHTML = `<div class="text-red-400">❌ ${data.message || 'Erro ao obter clientes'}</div>`;
+                }
+            } catch (error) {
+                contentEl.innerHTML = `<div class="text-red-400">❌ Erro: ${error.message}</div>`;
             }
         }
 
@@ -464,8 +596,22 @@
             document.getElementById('customers-console').innerHTML = '<div class="text-gray-500">Aguardando ação...</div>';
         }
 
-        function clearWebhooksConsole() {
-            document.getElementById('webhooks-console').innerHTML = '<div class="text-gray-500">Aguardando eventos de webhook...</div>';
+        function clearPaymentsConsole() {
+            document.getElementById('payments-console').innerHTML = '<div class="text-gray-500">Aguardando ação...</div>';
+        }
+
+        function clearBlingWebhooksConsole() {
+            document.getElementById('bling-webhooks-console').innerHTML = '<div class="text-gray-500">Aguardando eventos do Bling...</div>';
+        }
+
+        function clearMercadoPagoWebhooksConsole() {
+            document.getElementById('mercadopago-webhooks-console').innerHTML = '<div class="text-gray-500">Aguardando eventos do Mercado Pago...</div>';
+            lastMercadoPagoLogId = 0;
+        }
+
+        function clearMelhorEnvioWebhooksConsole() {
+            document.getElementById('melhorenvio-webhooks-console').innerHTML = '<div class="text-gray-500">Aguardando eventos do Melhor Envio...</div>';
+            lastMelhorEnvioLogId = 0;
         }
 
         async function revokeAuth() {
@@ -569,6 +715,63 @@
             }
         }
         
+        /**
+         * Listar formas de pagamento do Bling no console
+         */
+        async function listPaymentMethods() {
+            const contentEl = document.getElementById('payments-console');
+            contentEl.innerHTML = '<div class="text-teal-400">⏳ Consultando formas de pagamento...</div>';
+            
+            try {
+                const response = await fetch('/bling/api/payment-methods', {
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (!data.success) {
+                    contentEl.innerHTML = `<div class="text-red-400">❌ Erro: ${data.message}</div>`;
+                    return;
+                }
+                
+                let output = '<div class="text-green-400 font-bold mb-2">✓ Formas de Pagamento do Bling</div>';
+                output += '<div class="text-gray-400">─────────────────────────────────────────────────────</div>';
+                
+                data.payment_methods.forEach(method => {
+                    const isDefault = method.padrao === 'S';
+                    const marker = isDefault ? '<span class="text-yellow-400">★</span>' : '<span class="text-gray-500">○</span>';
+                    const defaultLabel = isDefault ? ' <span class="text-yellow-300">[PADRÃO]</span>' : '';
+                    const situacao = method.situacao === 'A' ? '<span class="text-green-400">Ativo</span>' : '<span class="text-red-400">Inativo</span>';
+                    
+                    output += `<div class="py-1">${marker} ID: <span class="text-blue-400">${method.id}</span> - ${method.descricao}${defaultLabel}</div>`;
+                    output += `<div class="ml-4 text-gray-400 text-xs">Tipo: ${method.tipoPagamento} | Status: ${situacao} | Destino: ${method.tipoDestino}</div>`;
+                });
+                
+                output += '<div class="text-gray-400 mt-2">─────────────────────────────────────────────────────</div>';
+                output += `<div class="text-cyan-400 mt-2">💡 Total: ${data.payment_methods.length} forma(s) de pagamento</div>`;
+                
+                // Mostrar IDs configurados
+                if (data.configured_methods) {
+                    output += '<div class="text-gray-400 mt-3">Métodos Configurados (.env):</div>';
+                    Object.entries(data.configured_methods).forEach(([key, value]) => {
+                        const method = data.payment_methods.find(m => m.id == value);
+                        if (method) {
+                            output += `<div class="text-green-400 ml-2">✓ ${key.toUpperCase()}: ${method.descricao} (ID ${value})</div>`;
+                        } else {
+                            output += `<div class="text-yellow-400 ml-2">⚠ ${key.toUpperCase()}: ID ${value} (não encontrado)</div>`;
+                        }
+                    });
+                }
+                
+                contentEl.innerHTML = output;
+                
+            } catch (error) {
+                contentEl.innerHTML = `<div class="text-red-400">❌ Erro: ${error.message}</div>`;
+            }
+        }
+        
         // Sincronizar pedidos
         async function syncOrders() {
             const contentEl = document.getElementById('orders-console');
@@ -607,52 +810,366 @@
             }
         }
 
-        // Testar webhook do Bling
-        async function testBlingWebhook() {
-            const contentEl = document.getElementById('webhooks-console');
+
+        // ========================================
+        // STATUS DO BLING
+        // ========================================
+        
+        async function fetchBlingStatuses() {
+            const contentEl = document.getElementById('orders-console');
             const timestamp = new Date().toLocaleTimeString('pt-BR');
             
-            contentEl.innerHTML = `<div class="text-yellow-400">[${timestamp}] 🧪 Enviando requisição de teste para webhook do Bling...</div>`;
+            contentEl.innerHTML = `<div class="text-yellow-400">[${timestamp}] 🔍 Buscando situações do Bling...</div>`;
             
             try {
-                const response = await fetch('https://localhost:8443/webhook', {
+                const response = await fetch('/bling/api/fetch-statuses', {
                     method: 'POST',
-                    mode: 'cors',
                     headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        test: true,
-                        event: 'test.webhook',
-                        data: {
-                            message: 'Teste de webhook do dashboard',
-                            timestamp: new Date().toISOString()
-                        }
-                    })
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    }
                 });
 
-                const data = await response.text();
+                const data = await response.json();
                 
-                let output = contentEl.innerHTML;
-                output += `<div class="text-green-400">[${timestamp}] ✅ Resposta recebida (HTTP ${response.status})</div>`;
-                output += `<div class="text-gray-400 ml-4">${data}</div>`;
-                output += `<div class="text-green-400 mt-2">✅ Webhook configurado corretamente! Webhooks reais do Bling funcionarão.</div>`;
-                contentEl.innerHTML = output;
+                if (data.success) {
+                    let output = contentEl.innerHTML;
+                    output += `<div class="text-green-400">[${timestamp}] ✅ ${data.count} situações encontradas</div>`;
+                    output += `<div class="text-blue-400 mt-2">[${timestamp}] 📋 Módulo de Vendas: ID ${data.module_id}</div>`;
+                    output += `<div class="text-gray-400 mt-2">─────────────────────────────────────────────</div>`;
+                    
+                    Object.entries(data.statuses).forEach(([id, details]) => {
+                        const color = details.internal_status === 'delivered' ? 'text-green-400' :
+                                     details.internal_status === 'cancelled' ? 'text-red-400' :
+                                     details.internal_status === 'shipped' ? 'text-indigo-400' :
+                                     details.internal_status === 'invoiced' ? 'text-purple-400' :
+                                     details.internal_status === 'processing' ? 'text-blue-400' :
+                                     'text-yellow-400';
+                        
+                        output += `<div class="${color}">ID ${id}: ${details.nome} → ${details.internal_status}</div>`;
+                    });
+                    
+                    output += `<div class="text-gray-400 mt-2">─────────────────────────────────────────────</div>`;
+                    output += `<div class="text-green-400 mt-2">[${timestamp}] ✅ Status armazenados em cache (24h)</div>`;
+                    contentEl.innerHTML = output;
+                } else {
+                    let output = contentEl.innerHTML;
+                    output += `<div class="text-red-400">[${timestamp}] ❌ Erro: ${data.message}</div>`;
+                    contentEl.innerHTML = output;
+                }
                 
-                // Auto-scroll para o final
                 contentEl.scrollTop = contentEl.scrollHeight;
-                
             } catch (error) {
                 let output = contentEl.innerHTML;
-                output += `<div class="text-red-400">[${timestamp}] ❌ Erro CORS: ${error.message}</div>`;
-                output += `<div class="text-yellow-400 ml-4 mt-2">⚠️ Erro esperado em teste manual devido a CORS (HTTP→HTTPS)</div>`;
-                output += `<div class="text-green-400 ml-4">✅ MAS: Webhooks reais do Bling funcionarão normalmente!</div>`;
-                output += `<div class="text-gray-400 ml-4 mt-2">Motivo: Bling envia webhooks diretamente (servidor→servidor), sem restrições CORS</div>`;
-                output += `<div class="text-blue-400 ml-4 mt-2">📝 Para testar: Configure no painel do Bling e envie um webhook de teste</div>`;
+                output += `<div class="text-red-400">[${timestamp}] ❌ Erro: ${error.message}</div>`;
                 contentEl.innerHTML = output;
                 contentEl.scrollTop = contentEl.scrollHeight;
             }
         }
+
+        async function syncOrderStatuses() {
+            const contentEl = document.getElementById('orders-console');
+            const timestamp = new Date().toLocaleTimeString('pt-BR');
+            
+            contentEl.innerHTML = `<div class="text-yellow-400">[${timestamp}] 🔄 Sincronizando status de TODOS os pedidos...</div>`;
+            
+            try {
+                const response = await fetch('/bling/api/sync-order-statuses', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    }
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    let output = contentEl.innerHTML;
+                    output += `<div class="text-green-400">[${timestamp}] ✅ Sincronização concluída</div>`;
+                    output += `<div class="text-cyan-400 ml-4">Total de pendentes: ${data.total}</div>`;
+                    output += `<div class="text-green-400 ml-4">Sincronizados: ${data.synced}</div>`;
+                    output += `<div class="text-red-400 ml-4">Falhas: ${data.failed}</div>`;
+                    contentEl.innerHTML = output;
+                } else {
+                    let output = contentEl.innerHTML;
+                    output += `<div class="text-red-400">[${timestamp}] ❌ Erro: ${data.message}</div>`;
+                    contentEl.innerHTML = output;
+                }
+                
+                contentEl.scrollTop = contentEl.scrollHeight;
+            } catch (error) {
+                let output = contentEl.innerHTML;
+                output += `<div class="text-red-400">[${timestamp}] ❌ Erro: ${error.message}</div>`;
+                contentEl.innerHTML = output;
+                contentEl.scrollTop = contentEl.scrollHeight;
+            }
+        }
+
+        async function clearStatusCache() {
+            const contentEl = document.getElementById('orders-console');
+            const timestamp = new Date().toLocaleTimeString('pt-BR');
+            
+            contentEl.innerHTML = `<div class="text-yellow-400">[${timestamp}] 🗑️ Limpando cache de status...</div>`;
+            
+            try {
+                const response = await fetch('/bling/api/clear-status-cache', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    }
+                });
+
+                const data = await response.json();
+                
+                let output = contentEl.innerHTML;
+                if (data.success) {
+                    output += `<div class="text-green-400">[${timestamp}] ✅ Cache limpo com sucesso</div>`;
+                    output += `<div class="text-gray-400 ml-4">Use "Buscar Status" para recarregar</div>`;
+                } else {
+                    output += `<div class="text-red-400">[${timestamp}] ❌ Erro: ${data.message}</div>`;
+                }
+                contentEl.innerHTML = output;
+                contentEl.scrollTop = contentEl.scrollHeight;
+            } catch (error) {
+                let output = contentEl.innerHTML;
+                output += `<div class="text-red-400">[${timestamp}] ❌ Erro: ${error.message}</div>`;
+                contentEl.innerHTML = output;
+                contentEl.scrollTop = contentEl.scrollHeight;
+            }
+        }
+
+        function clearStatusConsole() {
+            const contentEl = document.getElementById('orders-console');
+            contentEl.innerHTML = '<div class="text-gray-500">Console limpo. Aguardando ação...</div>';
+        }
+
+        // ========================================
+        // WEBHOOK LOGS - Polling em tempo real (separado por source)
+        // ========================================
+        
+        let lastBlingLogId = 0;
+        let lastMercadoPagoLogId = 0;
+        let lastMelhorEnvioLogId = 0;
+        let blingPollingInterval = null;
+        let mercadoPagoPollingInterval = null;
+        let melhorEnvioPollingInterval = null;
+        
+        async function loadBlingWebhookLogs() {
+            try {
+                const response = await fetch('/bling/api/webhook-logs?source=bling&limit=50');
+                const data = await response.json();
+                
+                if (data.success && data.logs.length > 0) {
+                    const contentEl = document.getElementById('bling-webhooks-console');
+                    let newLogs = [];
+                    
+                    // Filtrar apenas logs novos
+                    data.logs.forEach(log => {
+                        if (log.id > lastBlingLogId) {
+                            newLogs.push(log);
+                        }
+                    });
+                    
+                    if (newLogs.length > 0) {
+                        // Atualizar último ID
+                        lastBlingLogId = Math.max(...data.logs.map(l => l.id));
+                        
+                        // Adicionar novos logs ao console
+                        newLogs.reverse().forEach(log => {
+                            contentEl.innerHTML = formatWebhookLog(log) + contentEl.innerHTML;
+                        });
+                        
+                        // Auto-scroll para o topo
+                        contentEl.scrollTop = 0;
+                    }
+                }
+            } catch (error) {
+                console.error('Erro ao carregar logs do Bling:', error);
+            }
+        }
+        
+        async function loadMercadoPagoWebhookLogs() {
+            try {
+                const response = await fetch('/bling/api/webhook-logs?source=mercadopago&limit=50');
+                const data = await response.json();
+                
+                if (data.success && data.logs.length > 0) {
+                    const contentEl = document.getElementById('mercadopago-webhooks-console');
+                    let newLogs = [];
+                    
+                    // Filtrar apenas logs novos
+                    data.logs.forEach(log => {
+                        if (log.id > lastMercadoPagoLogId) {
+                            newLogs.push(log);
+                        }
+                    });
+                    
+                    if (newLogs.length > 0) {
+                        // Atualizar último ID
+                        lastMercadoPagoLogId = Math.max(...data.logs.map(l => l.id));
+                        
+                        // Adicionar novos logs ao console
+                        newLogs.reverse().forEach(log => {
+                            contentEl.innerHTML = formatWebhookLog(log) + contentEl.innerHTML;
+                        });
+                        
+                        // Auto-scroll para o topo
+                        contentEl.scrollTop = 0;
+                    }
+                }
+            } catch (error) {
+                console.error('Erro ao carregar logs do Mercado Pago:', error);
+            }
+        }
+        
+        async function loadMelhorEnvioWebhookLogs() {
+            try {
+                const response = await fetch('/bling/api/webhook-logs?source=melhorenvio&limit=50');
+                const data = await response.json();
+                
+                if (data.success && data.logs.length > 0) {
+                    const contentEl = document.getElementById('melhorenvio-webhooks-console');
+                    let newLogs = [];
+                    
+                    // Filtrar apenas logs novos
+                    data.logs.forEach(log => {
+                        if (log.id > lastMelhorEnvioLogId) {
+                            newLogs.push(log);
+                        }
+                    });
+                    
+                    if (newLogs.length > 0) {
+                        // Atualizar último ID
+                        lastMelhorEnvioLogId = Math.max(...data.logs.map(l => l.id));
+                        
+                        // Adicionar novos logs ao console
+                        newLogs.reverse().forEach(log => {
+                            contentEl.innerHTML = formatWebhookLog(log) + contentEl.innerHTML;
+                        });
+                        
+                        // Auto-scroll para o topo
+                        contentEl.scrollTop = 0;
+                    }
+                }
+            } catch (error) {
+                console.error('Erro ao carregar logs do Melhor Envio:', error);
+            }
+        }
+        
+        function formatWebhookLog(log) {
+            const timestamp = new Date(log.created_at).toLocaleTimeString('pt-BR');
+            const statusColor = log.status === 'success' ? 'text-green-400' :
+                              log.status === 'error' ? 'text-red-400' :
+                              log.status === 'processing' ? 'text-yellow-400' :
+                              'text-blue-400';
+            
+            const statusIcon = log.status === 'success' ? '✅' :
+                              log.status === 'error' ? '❌' :
+                              log.status === 'processing' ? '⏳' :
+                              '📥';
+            
+            let logLine = `<div class="${statusColor} border-l-2 border-gray-700 pl-2 py-1">`;
+            logLine += `<span class="text-gray-500">[${timestamp}]</span> `;
+            logLine += `<span class="font-bold">${statusIcon} ${log.event_type || 'webhook'}</span>`;
+            
+            if (log.resource && log.action) {
+                logLine += ` <span class="text-cyan-400">(${log.resource}.${log.action})</span>`;
+            }
+            
+            if (log.response_code) {
+                logLine += ` <span class="text-gray-400">HTTP ${log.response_code}</span>`;
+            }
+            
+            if (log.error_message) {
+                logLine += `<div class="text-red-300 text-xs ml-4 mt-1">⚠️ ${log.error_message}</div>`;
+            }
+            
+            // Mostrar metadata relevante
+            if (log.metadata) {
+                if (log.metadata.product_id) {
+                    logLine += `<div class="text-gray-400 text-xs ml-4">📦 Produto ID: ${log.metadata.product_id} (SKU: ${log.metadata.product_sku || 'N/A'})</div>`;
+                }
+                if (log.metadata.stock_updated) {
+                    logLine += `<div class="text-gray-400 text-xs ml-4">📊 Estoque: ${log.metadata.stock_updated.old} → ${log.metadata.stock_updated.new}</div>`;
+                }
+                if (log.metadata.order_id) {
+                    logLine += `<div class="text-gray-400 text-xs ml-4">🛒 Pedido: ${log.metadata.order_number || log.metadata.order_id}</div>`;
+                }
+                if (log.metadata.payment_id) {
+                    logLine += `<div class="text-gray-400 text-xs ml-4">💳 Pagamento ID: ${log.metadata.payment_id}</div>`;
+                }
+                if (log.metadata.processing_time_ms) {
+                    logLine += `<div class="text-gray-500 text-xs ml-4">⏱️ ${log.metadata.processing_time_ms}ms</div>`;
+                }
+            }
+            
+            logLine += `</div>`;
+            return logLine;
+        }
+        
+        function startWebhookPolling() {
+            // Carregar logs iniciais
+            loadBlingWebhookLogs().catch(err => console.error('Erro ao carregar logs Bling:', err));
+            loadMercadoPagoWebhookLogs().catch(err => console.error('Erro ao carregar logs Mercado Pago:', err));
+            loadMelhorEnvioWebhookLogs().catch(err => console.error('Erro ao carregar logs Melhor Envio:', err));
+            
+            // Polling a cada 2 segundos (separado por source)
+            // Usar setTimeout recursivo para evitar problemas com listeners assíncronos
+            function pollBling() {
+                loadBlingWebhookLogs().catch(err => {
+                    console.error('Erro no polling Bling:', err);
+                }).finally(() => {
+                    blingPollingInterval = setTimeout(pollBling, 2000);
+                });
+            }
+            
+            function pollMercadoPago() {
+                loadMercadoPagoWebhookLogs().catch(err => {
+                    console.error('Erro no polling Mercado Pago:', err);
+                }).finally(() => {
+                    mercadoPagoPollingInterval = setTimeout(pollMercadoPago, 2000);
+                });
+            }
+            
+            function pollMelhorEnvio() {
+                loadMelhorEnvioWebhookLogs().catch(err => {
+                    console.error('Erro no polling Melhor Envio:', err);
+                }).finally(() => {
+                    melhorEnvioPollingInterval = setTimeout(pollMelhorEnvio, 2000);
+                });
+            }
+            
+            pollBling();
+            pollMercadoPago();
+            pollMelhorEnvio();
+        }
+        
+        function stopWebhookPolling() {
+            if (blingPollingInterval) {
+                clearTimeout(blingPollingInterval);
+                blingPollingInterval = null;
+            }
+            if (mercadoPagoPollingInterval) {
+                clearTimeout(mercadoPagoPollingInterval);
+                mercadoPagoPollingInterval = null;
+            }
+            if (melhorEnvioPollingInterval) {
+                clearTimeout(melhorEnvioPollingInterval);
+                melhorEnvioPollingInterval = null;
+            }
+        }
+        
+        // Iniciar polling quando a página carregar
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', startWebhookPolling);
+        } else {
+            startWebhookPolling();
+        }
+        
+        // Parar polling quando a página for fechada
+        window.addEventListener('beforeunload', stopWebhookPolling);
 
         // Load status on page load
         checkStatus();

@@ -4,119 +4,109 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\MercadoPagoService;
+use App\Services\Webhook\WebhookLogService;
+use App\Services\Webhook\MercadoPagoWebhookHandler;
 use App\Models\Order;
+use App\Models\WebhookLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class MercadoPagoWebhookController extends Controller
 {
-    private MercadoPagoService $mercadoPago;
-
-    public function __construct(MercadoPagoService $mercadoPago)
-    {
-        $this->mercadoPago = $mercadoPago;
-    }
+    public function __construct(
+        private MercadoPagoService $mercadoPago,
+        private WebhookLogService $logService,
+        private MercadoPagoWebhookHandler $handler
+    ) {}
 
     /**
      * Handle payment notifications from Mercado Pago
      */
     public function handle(Request $request)
     {
-        try {
-            $data = $request->all();
-            
-            Log::info('Webhook MercadoPago recebido', [
-                'data' => $data,
-                'headers' => $request->headers->all()
-            ]);
+        $startTime = microtime(true);
+        $data = $request->all();
+        
+        // Criar log do webhook ANTES de processar
+        $webhookLog = $this->logService->createLog('mercadopago', $request, $data);
+        
+        // Salvar no cache para o comando de escuta
+        Cache::put("webhook_recent_mercadopago", [
+            'id' => $webhookLog->id,
+            'type' => $data['type'] ?? null,
+            'timestamp' => now()->format('Y-m-d H:i:s'),
+        ], 60); // 1 minuto
+        
+        Log::info('Webhook MercadoPago recebido', [
+            'webhook_log_id' => $webhookLog->id,
+            'type' => $data['type'] ?? null,
+            'payment_id' => $data['data']['id'] ?? null,
+        ]);
 
-            // Validar assinatura do webhook (x-signature)
-            if (!$this->validateWebhookSignature($request)) {
-                Log::warning('Webhook MercadoPago com assinatura inválida');
+        try {
+            $paymentId = $data['data']['id'] ?? null;
+            $isSimulator = str_starts_with($paymentId ?? '', 'sim_');
+            $isDevelopment = config('app.env') !== 'production';
+
+            // Validar assinatura do webhook
+            if (!$isDevelopment && !$this->validateWebhookSignature($request)) {
+                $this->logService->markAsError($webhookLog, 'Invalid signature', 401);
+                Log::warning('Webhook MercadoPago com assinatura inválida', [
+                    'webhook_log_id' => $webhookLog->id
+                ]);
                 return response()->json(['error' => 'Invalid signature'], 401);
             }
 
             // Validar tipo de notificação
             if (!isset($data['type']) || $data['type'] !== 'payment') {
-                Log::info('Webhook ignorado - tipo não é payment', ['type' => $data['type'] ?? 'null']);
+                $this->logService->markAsSuccess($webhookLog, '{"status": "ok"}', 200, [
+                    'reason' => 'Tipo não é payment',
+                    'type' => $data['type'] ?? 'null',
+                ]);
+                Log::info('Webhook ignorado - tipo não é payment', [
+                    'type' => $data['type'] ?? 'null',
+                    'webhook_log_id' => $webhookLog->id
+                ]);
                 return response()->json(['status' => 'ok'], 200);
             }
-
-            // Extrair payment_id
-            $paymentId = $data['data']['id'] ?? null;
             
             if (!$paymentId) {
-                Log::warning('Webhook sem payment_id', ['data' => $data]);
+                $this->logService->markAsError($webhookLog, 'payment_id missing', 400);
+                Log::warning('Webhook sem payment_id', [
+                    'data' => $data,
+                    'webhook_log_id' => $webhookLog->id
+                ]);
                 return response()->json(['error' => 'payment_id missing'], 400);
             }
 
-            // Buscar status do pagamento na API do Mercado Pago
-            $paymentStatus = $this->mercadoPago->getPaymentStatus($paymentId);
+            // Atualizar status para processing
+            $this->logService->markAsProcessing($webhookLog);
 
-            if (!$paymentStatus['success']) {
-                Log::error('Erro ao consultar status do pagamento', [
-                    'payment_id' => $paymentId,
-                    'error' => $paymentStatus['error']
-                ]);
-                return response()->json(['error' => 'Failed to get payment status'], 500);
-            }
+            // Processar webhook usando handler dedicado
+            $this->handler->handle($data, $webhookLog);
 
-            // Buscar pedido pelo payment_id
-            $order = Order::where('payment_id', $paymentId)->first();
-
-            if (!$order) {
-                Log::warning('Pedido não encontrado para payment_id', ['payment_id' => $paymentId]);
-                return response()->json(['error' => 'Order not found'], 404);
-            }
-
-            // Atualizar status do pagamento
-            $previousStatus = $order->payment_status;
-            $newStatus = $paymentStatus['status'];
-
-            $order->update([
-                'payment_status' => $newStatus
+            // Retornar sucesso
+            $response = response()->json(['status' => 'ok'], 200);
+            
+            // Atualizar log com sucesso
+            $this->logService->markAsSuccess($webhookLog, '{"status": "ok"}', 200, [
+                'processing_time_ms' => round((microtime(true) - $startTime) * 1000, 2),
             ]);
-
-            Log::info('Status de pagamento atualizado', [
-                'order_id' => $order->id,
-                'order_number' => $order->order_number,
-                'payment_id' => $paymentId,
-                'previous_status' => $previousStatus,
-                'new_status' => $newStatus,
-                'status_detail' => $paymentStatus['status_detail']
-            ]);
-
-            // Se pagamento aprovado, atualizar status do pedido
-            if ($paymentStatus['approved'] && $order->status === 'pending') {
-                $order->update([
-                    'status' => 'processing',
-                    'paid_at' => now()
-                ]);
-
-                Log::info('Pedido marcado como pago e em processamento', [
-                    'order_id' => $order->id,
-                    'order_number' => $order->order_number
-                ]);
-            }
-
-            // Se pagamento cancelado/rejeitado
-            if (in_array($newStatus, ['cancelled', 'rejected'])) {
-                $order->update(['status' => 'cancelled']);
-                
-                Log::info('Pedido cancelado devido a pagamento rejeitado', [
-                    'order_id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'status_detail' => $paymentStatus['status_detail']
-                ]);
-            }
-
-            return response()->json(['status' => 'ok'], 200);
+            
+            return $response;
 
         } catch (\Exception $e) {
             Log::error('Erro ao processar webhook MercadoPago', [
+                'webhook_log_id' => $webhookLog->id ?? null,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
+
+            // Atualizar log com erro
+            if (isset($webhookLog)) {
+                $this->logService->markAsError($webhookLog, $e->getMessage(), 500);
+            }
 
             return response()->json(['error' => 'Internal server error'], 500);
         }

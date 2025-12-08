@@ -64,6 +64,7 @@ return [
         // Atalhos úteis
         'base_url' => env('WORDPRESS_EXTERNAL_URL', 'https://' . env('DOMAIN', 'localhost') . ':8443'),
         'verify_email' => env('WORDPRESS_EXTERNAL_URL', 'https://' . env('DOMAIN', 'localhost') . ':8443') . '/verificar-email',
+        'reset_password' => env('WORDPRESS_EXTERNAL_URL', 'https://' . env('DOMAIN', 'localhost') . ':8443') . '/redefinir-senha',
     ],
 
     /*

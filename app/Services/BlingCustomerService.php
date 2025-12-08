@@ -161,6 +161,12 @@ class BlingCustomerService
         try {
             $payload = $this->prepareCustomerPayload($customer);
             
+            Log::info('Updating customer in Bling', [
+                'customer_id' => $customer->id,
+                'bling_id' => $customer->bling_id,
+                'payload' => $payload // LOG DO PAYLOAD COMPLETO
+            ]);
+            
             $response = Http::withToken($token)
                 ->timeout(30)
                 ->put("{$this->baseUrl}/contatos/{$customer->bling_id}", $payload);

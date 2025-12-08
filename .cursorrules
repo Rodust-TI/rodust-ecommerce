@@ -1,0 +1,138 @@
+# Regras do Projeto - Rodust E-commerce
+
+## 🐳 Ambiente Docker (CRÍTICO)
+
+**SEMPRE execute comandos Artisan dentro dos containers Docker:**
+```bash
+# ✅ CORRETO - Dentro do container
+docker exec docker-laravel.test-1 php artisan <comando>
+
+# ❌ ERRADO - Localmente no Windows
+php artisan <comando>
+```
+
+### Containers Ativos:
+- `docker-laravel.test-1` - Aplicação Laravel (porta 8000)
+- `docker-laravel.queue-1` - Queue Worker (Redis)
+- `docker-mysql-1` - MySQL 8.0
+- `docker-redis-1` - Redis (porta 6379)
+- `docker-wordpress-1` - WordPress (porta 8443)
+
+### Configuração de Rede:
+- **DB_HOST=mysql** (nome do serviço Docker, NÃO use host.docker.internal)
+- **DB_PORT=3306** (porta interna, NÃO 3307 que é mapeamento externo)
+- **REDIS_HOST=redis** (nome do serviço Docker)
+- **CACHE_STORE=redis**
+- **QUEUE_CONNECTION=redis**
+
+## 🏗️ Arquitetura
+
+### Stack:
+- **Frontend**: WordPress (Tailwind CSS, Gulp, Alpine.js)
+- **Backend**: Laravel 11 (API REST)
+- **ERP**: Bling API v3 (OAuth2)
+- **Queue**: Redis com Laravel Horizon
+- **Cache**: Redis
+
+### Integração WordPress ↔ Laravel:
+- WordPress consome API Laravel via `http://laravel.test`
+- Laravel sincroniza produtos/pedidos com Bling
+- Jobs enfileirados processados por `laravel.queue-1`
+
+## ⚡ Particularidades Importantes
+
+### BlingV3Adapter:
+- **Lazy Loading de Tokens** - tokens carregados apenas quando necessário (não no construtor)
+- Fallback para cache se banco indisponível (importante para queue worker)
+- SSL verification desabilitado: `verify => false` (apenas desenvolvimento)
+
+### Comandos Artisan Customizados:
+```bash
+# Bling - Sempre executar no container
+docker exec docker-laravel.test-1 php artisan bling:fetch-statuses [--clear-cache]
+docker exec docker-laravel.test-1 php artisan bling:sync-orders [--limit=N|--all]
+docker exec docker-laravel.test-1 php artisan bling:refresh-token
+```
+
+### Cache & Queue:
+- **SEMPRE limpar cache após mudanças em .env ou configs:**
+  ```bash
+  docker exec docker-laravel.test-1 php artisan config:clear
+  docker exec docker-laravel.test-1 php artisan optimize:clear
+  ```
+- **Reiniciar queue worker após mudanças:**
+  ```bash
+  docker restart docker-laravel.queue-1
+  ```
+
+### Jobs Existentes (Redis Queue):
+- `SyncProductToWordPress`
+- `SyncProductToBling`
+- `SyncProductDetailFromBling`
+- `SyncOrderToBling`
+- `SyncCustomerToBling`
+- `SyncCustomerFromBling`
+
+## 🔐 Bling OAuth2
+
+### Escopos Necessários:
+```
+12288  = Produtos
+20480  = Contatos
+28672  = Pedidos
+32768  = Situações
+```
+
+### Token Management:
+- Tokens armazenados: `integrations` table + Redis cache
+- Refresh automático quando expira
+- Reconexão manual: http://localhost:8000/bling/authorize
+
+### Status do Pedido (OrderStatus enum):
+- pending, processing, invoiced, shipped, delivered, cancelled
+
+## 📁 Estrutura de Código
+
+### Services:
+- `BlingV3Adapter` - Comunicação com API Bling
+- `BlingStatusService` - Gerenciamento de situações
+- `BlingOrderService` - Sincronização de pedidos
+
+### WordPress Theme (rodust):
+- Build: `npm run build` (Gulp)
+- Assets: `wordpress/wp-content/themes/rodust/assets/`
+- Modular: partials separados para manutenibilidade
+
+## 🚫 Erros Comuns a Evitar
+
+1. **Rodar `php artisan` localmente** → SEMPRE usar `docker exec`
+2. **DB_PORT=3307** → Usar **3306** (porta interna)
+3. **DB_HOST=host.docker.internal** → Usar **mysql** (nome do serviço)
+4. **Esquecer `config:clear`** → Cache pode manter configs antigas
+5. **Não reiniciar queue worker** → Mudanças em código não são aplicadas
+6. **Carregar tokens no construtor** → Quebra queue worker (usar lazy loading)
+
+## 🔄 Fluxo de Desenvolvimento
+
+1. Fazer mudanças no código
+2. Se mudou `.env` ou configs: `docker exec docker-laravel.test-1 php artisan config:clear`
+3. Se mudou Jobs/Services: `docker restart docker-laravel.queue-1`
+4. Se mudou JS/CSS do WordPress: `npm run build` (na pasta do tema)
+5. Testar sempre via container, não localmente
+
+## 📊 Logs & Debug
+
+```bash
+# Laravel logs
+docker exec docker-laravel.test-1 tail -f storage/logs/laravel.log
+
+# Queue worker logs
+docker logs -f docker-laravel.queue-1
+
+# MySQL logs
+docker logs -f docker-mysql-1
+```
+
+---
+
+**LEMBRETE**: Este é um projeto **100% dockerizado**. NUNCA execute comandos PHP/Artisan diretamente no Windows/Host.

@@ -129,8 +129,11 @@ class OrderController extends Controller
 
             DB::commit();
 
-            // Enviar para fila de sincronização com Bling
-            SyncOrderToBling::dispatch($order);
+            // Nota: Pedidos com PIX/Boleto serão enviados ao Bling apenas após confirmação de pagamento
+            // Pedidos com cartão de crédito são enviados imediatamente (pagamento já processado)
+            if ($request->get('payment_method') === 'credit_card') {
+                SyncOrderToBling::dispatch($order);
+            }
 
             return response()->json($order->load(['customer', 'items']), 201);
         } catch (\Exception $e) {
@@ -149,6 +152,35 @@ class OrderController extends Controller
         return response()->json([
             'success' => true,
             'data' => $order
+        ]);
+    }
+
+    /**
+     * Verificar status do pedido (público - usado para polling PIX)
+     * GET /api/orders/{id}/status
+     */
+    public function checkStatus(string $id)
+    {
+        $order = Order::find($id);
+        
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pedido não encontrado'
+            ], 404);
+        }
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $order->id,
+                'order_number' => $order->order_number,
+                'status' => $order->status,
+                'payment_status' => $order->payment_status,
+                'payment_method' => $order->payment_method,
+                'paid_at' => $order->paid_at?->toIso8601String(),
+                'is_paid' => $order->payment_status === 'approved' || $order->status === 'processing',
+            ]
         ]);
     }
 

@@ -31,7 +31,7 @@ class CreatePaymentRequest extends FormRequest
             'shipping_address.postal_code' => 'required|string',
             'shipping_address.street' => 'required|string',
             'shipping_address.number' => 'required|string',
-            'shipping_address.neighborhood' => 'required|string',
+            'shipping_address.neighborhood' => 'nullable|string',
             'shipping_address.city' => 'required|string',
             'shipping_address.state' => 'required|string|size:2',
             'items' => 'required|array|min:1',

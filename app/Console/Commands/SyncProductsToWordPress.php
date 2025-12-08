@@ -16,14 +16,14 @@ class SyncProductsToWordPress extends Command
         $this->info('🔄 Sincronizando produtos com WordPress...');
         
         $products = Product::all();
-        $wpUrl = rtrim(config('urls.wordpress.external'), '/');
+        $wpUrl = rtrim(config('services.wordpress.sync_url'), '/');
         
         $success = 0;
         $errors = 0;
         
         // Credenciais da API WordPress
-        $wpUser = config('app.wordpress_api_user', 'admin');
-        $wpPassword = config('app.wordpress_api_password');
+        $wpUser = config('services.wordpress.api_user');
+        $wpPassword = config('services.wordpress.api_password');
         
         foreach ($products as $product) {
             try {

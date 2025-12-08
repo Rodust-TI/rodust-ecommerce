@@ -21,6 +21,16 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'google_id',
+        'avatar',
+        'must_reset_password',
+        'synced_from_bling',
+        'last_sync_at',
+        'bling_id',
+        'cpf',
+        'phone',
+        'password_reset_token',
+        'password_reset_token_expires_at',
     ];
 
     /**
@@ -43,6 +53,10 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'must_reset_password' => 'boolean',
+            'synced_from_bling' => 'boolean',
+            'last_sync_at' => 'datetime',
+            'password_reset_token_expires_at' => 'datetime',
         ];
     }
 }

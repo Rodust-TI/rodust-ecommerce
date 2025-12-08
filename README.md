@@ -10,8 +10,7 @@ Backend API do projeto Rodust E-commerce integrado com Bling ERP, Mercado Pago e
 
 ```powershell
 cd M:\Websites\rodust.com.br\ecommerce
-.\vendor\bin\sail up -d
-.\vendor\bin\sail ps
+.\docker-up.ps1
 ```
 
 **Acessar API:** http://localhost:8000
@@ -47,30 +46,27 @@ Toda documentação foi centralizada em [`/docs/`](../docs/):
 
 ### 1. Setup do Ambiente
 
-O projeto está configurado para rodar com **Laravel Sail** (Docker). Os arquivos ficam no SSD externo (`M:\`) mas são executados dentro de containers Linux para melhor performance e compatibilidade.
+O projeto está configurado para rodar com **Docker Compose**. Os arquivos ficam no SSD externo (`M:\`) mas são executados dentro de containers Linux para melhor performance e compatibilidade.
+
+**⚠️ IMPORTANTE:** O Docker está configurado em `M:\Websites\rodust.com.br\docker\` (mesmo nível de `ecommerce/` e `wordpress/`).
 
 ### 2. Iniciar os Containers
 
 No **PowerShell** (Windows), na raiz do projeto:
 
 ```powershell
-# Subir os containers (primeira vez pode demorar para fazer build)
-.\vendor\bin\sail up -d
+# Subir os containers (usa o Docker em ../docker/)
+.\docker-up.ps1
 
-# Verificar status dos containers
-.\vendor\bin\sail ps
+# Parar os containers
+.\docker-down.ps1
 ```
 
-**Atalho recomendado**: Crie um alias para facilitar:
+Ou diretamente na pasta docker:
 
 ```powershell
-# Adicione ao seu perfil do PowerShell ($PROFILE)
-function sail { .\vendor\bin\sail.ps1 $args }
-
-# Depois use apenas:
-sail up -d
-sail ps
-sail artisan migrate
+cd M:\Websites\rodust.com.br\docker
+docker compose up -d
 ```
 
 ### 3. Configurar Banco de Dados
@@ -89,51 +85,71 @@ DB_PASSWORD=password
 Executar migrations:
 
 ```powershell
-.\vendor\bin\sail artisan migrate
+.\artisan.ps1 migrate
 ```
 
 ### 4. Acessar a Aplicação
 
-- **Aplicação Laravel**: http://localhost
-- **MySQL**: `localhost:3306` (credenciais: `sail` / `password`)
+- **Aplicação Laravel**: http://localhost:8000
+- **WordPress**: https://localhost:8443
+- **MySQL**: `localhost:3307` (credenciais: `root` / `password`)
 - **Redis**: `localhost:6379`
 
-## 🔧 Comandos Úteis do Sail
+## 🌐 Webhooks (UltraHook)
+
+Para receber webhooks do Mercado Pago durante o desenvolvimento, use o UltraHook:
 
 ```powershell
-# Iniciar containers
-.\vendor\bin\sail up -d
+# 1. Instalar e configurar (primeira vez)
+.\ultrahook-setup.ps1
+
+# 2. Iniciar tunnel de webhooks
+.\ultrahook-start.ps1
+
+# 3. Parar tunnel (quando necessário)
+.\ultrahook-stop.ps1
+```
+
+A URL pública será exibida quando o UltraHook iniciar. Configure-a no painel do Mercado Pago.
+
+📖 **Documentação completa:** [`ULTRAHOOK-SETUP.md`](./ULTRAHOOK-SETUP.md)
+
+## 🔧 Comandos Úteis do Docker
+
+```powershell
+# Iniciar containers (na raiz do projeto)
+.\docker-up.ps1
 
 # Parar containers
-.\vendor\bin\sail down
+.\docker-down.ps1
 
 # Ver logs
-.\vendor\bin\sail logs -f
+docker compose -f M:\Websites\rodust.com.br\docker\compose.yaml logs -f
 
 # Executar comandos Artisan
-.\vendor\bin\sail artisan [comando]
+.\artisan.ps1 [comando]
+# Ou diretamente:
+docker exec -it docker-laravel.test-1 php artisan [comando]
 
-# Executar Composer dentro do container
-.\vendor\bin\sail composer [comando]
-
-# Executar NPM dentro do container
-.\vendor\bin\sail npm [comando]
-
-# Acessar shell do container
-.\vendor\bin\sail shell
+# Acessar shell do container Laravel
+docker exec -it docker-laravel.test-1 bash
 
 # Executar testes
-.\vendor\bin\sail test
+docker exec -it docker-laravel.test-1 php artisan test
 ```
 
 ## 📦 Pacotes Instalados
 
-Após subir os containers, instale os pacotes essenciais:
+Os pacotes essenciais já estão instalados via `composer.json`:
+- `guzzlehttp/guzzle` - Cliente HTTP
+- `laravel/sanctum` - Autenticação API
+- `spatie/laravel-permission` - Permissões
+- `mercadopago/dx-php` - SDK Mercado Pago
+
+Para instalar novos pacotes:
 
 ```powershell
-.\vendor\bin\sail composer require guzzlehttp/guzzle
-.\vendor\bin\sail composer require laravel/sanctum
-.\vendor\bin\sail composer require spatie/laravel-permission
+docker exec -it docker-laravel.test-1 composer require [pacote]
 ```
 
 ## 🔌 Integração com Bling
@@ -169,11 +185,10 @@ WordPress (Front) → Laravel API → Bling ERP
 
 ### Autenticação WordPress → Laravel
 
-Use Laravel Sanctum para gerar tokens de API:
+Laravel Sanctum já está configurado. Para publicar configurações:
 
 ```powershell
-.\vendor\bin\sail artisan vendor:publish --provider="Laravel\Sanctum\SanctumServiceProvider"
-.\vendor\bin\sail artisan migrate
+.\artisan.ps1 vendor:publish --provider="Laravel\Sanctum\SanctumServiceProvider"
 ```
 
 ## 💾 Trabalhando com SSD Externo
@@ -194,17 +209,17 @@ O Docker Desktop com WSL2 otimiza automaticamente o acesso aos volumes do Window
 # No WSL (Ubuntu/Debian)
 cp -r /mnt/m/Websites/rodust.com.br/ecommerce ~/projetos/
 cd ~/projetos/ecommerce
-./vendor/bin/sail up -d
+# Use o Docker em ../docker/ ou configure localmente
 ```
 
 ## 🐳 Docker e Múltiplos Projetos
 
 ### Separação de Projetos
 
-Cada projeto Laravel com Sail cria:
-- **Rede própria**: `ecommerce_sail` (nome baseado na pasta)
-- **Volumes próprios**: `ecommerce_sail-mysql`, `ecommerce_sail-redis`
-- **Containers próprios**: prefixados com nome da pasta
+O Docker está configurado em `M:\Websites\rodust.com.br\docker\` e cria:
+- **Rede própria**: `rodust-network`
+- **Volumes próprios**: `rodust-mysql`, `rodust-redis`
+- **Containers**: `docker-laravel.test-1`, `docker-laravel.queue-1`, `docker-wordpress-1`, etc.
 
 ### ⚠️ Não Há Risco de Conflito
 
@@ -239,7 +254,11 @@ ecommerce/
 ├── routes/
 │   ├── api.php             # Rotas da API REST
 │   └── web.php             # Rotas web (admin, se houver)
-├── compose.yaml            # Configuração Docker
+├── docker-legacy/          # Arquivos Docker legados (não usados)
+├── scripts/                # Scripts de desenvolvimento e manutenção
+│   ├── debug/             # Scripts de debug
+│   ├── maintenance/       # Scripts de manutenção
+│   └── utils/             # Utilitários
 └── .env                    # Variáveis de ambiente
 ```
 
@@ -250,18 +269,18 @@ ecommerce/
 Criar modelos com migrations:
 
 ```powershell
-.\vendor\bin\sail artisan make:model Product -m
-.\vendor\bin\sail artisan make:model Customer -m
-.\vendor\bin\sail artisan make:model Order -m
-.\vendor\bin\sail artisan make:model OrderItem -m
+.\artisan.ps1 make:model Product -m
+.\artisan.ps1 make:model Customer -m
+.\artisan.ps1 make:model Order -m
+.\artisan.ps1 make:model OrderItem -m
 ```
 
 ### Controllers API
 
 ```powershell
-.\vendor\bin\sail artisan make:controller Api/ProductController --api
-.\vendor\bin\sail artisan make:controller Api/CartController
-.\vendor\bin\sail artisan make:controller Api/CheckoutController
+.\artisan.ps1 make:controller Api/ProductController --api
+.\artisan.ps1 make:controller Api/CartController
+.\artisan.ps1 make:controller Api/CheckoutController
 ```
 
 ### Jobs e Queues
@@ -273,11 +292,12 @@ Para sincronização assíncrona com Bling:
 QUEUE_CONNECTION=redis
 
 # Criar jobs
-.\vendor\bin\sail artisan make:job SyncProductToBling
-.\vendor\bin\sail artisan make:job ProcessOrder
+.\artisan.ps1 make:job SyncProductToBling
+.\artisan.ps1 make:job ProcessOrder
 
-# Rodar queue worker
-.\vendor\bin\sail artisan queue:work
+# Queue worker já roda automaticamente no container laravel.queue
+# Para rodar manualmente:
+docker exec -it docker-laravel.queue-1 php artisan queue:work
 ```
 
 ## 🔒 Segurança
@@ -311,8 +331,9 @@ APP_PORT=8080
 
 ```powershell
 # Rebuild dos containers
-.\vendor\bin\sail build --no-cache
-.\vendor\bin\sail up -d
+cd M:\Websites\rodust.com.br\docker
+docker compose build --no-cache
+docker compose up -d
 ```
 
 ### Performance lenta
@@ -322,7 +343,7 @@ APP_PORT=8080
 3. Considere usar cache do Composer:
 
 ```powershell
-.\vendor\bin\sail composer install --prefer-dist --optimize-autoloader
+docker exec -it docker-laravel.test-1 composer install --prefer-dist --optimize-autoloader
 ```
 
 ### Warnings de "Ambiguous class resolution"
@@ -346,7 +367,7 @@ São avisos sobre classes duplicadas no vendor. Não afetam o funcionamento. Par
 Depois rode:
 
 ```powershell
-.\vendor\bin\sail composer dump-autoload -o
+docker exec -it docker-laravel.test-1 composer dump-autoload -o
 ```
 
 ## 📞 Suporte

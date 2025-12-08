@@ -24,6 +24,7 @@ class BlingV3Adapter implements ERPInterface
     protected string $clientSecret;
     protected ?string $accessToken = null;
     protected ?string $refreshToken = null;
+    protected bool $tokensLoaded = false;
 
     public function __construct()
     {
@@ -34,14 +35,14 @@ class BlingV3Adapter implements ERPInterface
         $this->client = new Client([
             'base_uri' => $this->baseUrl,
             'timeout' => 10,
+            'verify' => false, // Desabilitar verificação SSL (apenas para desenvolvimento)
             'headers' => [
                 'Accept' => 'application/json',
                 'Content-Type' => 'application/json',
             ],
         ]);
 
-        // Carregar tokens do cache
-        $this->loadTokens();
+        // NÃO carregar tokens aqui - lazy loading apenas quando necessário
     }
 
     /**
@@ -49,6 +50,12 @@ class BlingV3Adapter implements ERPInterface
      */
     protected function getAccessToken(): string
     {
+        // Lazy loading - carregar tokens apenas na primeira vez que for usado
+        if (!$this->tokensLoaded) {
+            $this->loadTokens();
+            $this->tokensLoaded = true;
+        }
+        
         if ($this->accessToken && !$this->isTokenExpired()) {
             return $this->accessToken;
         }
@@ -65,31 +72,48 @@ class BlingV3Adapter implements ERPInterface
      */
     protected function loadTokens(): void
     {
-        // Verificar se tabela existe antes de consultar
-        if (!Schema::hasTable('integrations')) {
-            // Fallback para cache durante migrations
-            $this->accessToken = Cache::get('bling_access_token');
-            $this->refreshToken = Cache::get('bling_refresh_token');
-            return;
-        }
-        
-        // Tentar carregar do banco primeiro
-        $integration = Integration::where('service', 'bling')->first();
-        
-        if ($integration && $integration->is_active) {
-            $this->accessToken = $integration->access_token;
-            $this->refreshToken = $integration->refresh_token;
-            
-            // Manter cache sincronizado para performance
-            if ($this->accessToken && $integration->token_expires_at) {
-                $expiresIn = $integration->token_expires_at->diffInSeconds(now());
-                if ($expiresIn > 0) {
-                    Cache::put('bling_access_token', $this->accessToken, $expiresIn);
-                    Cache::put('bling_refresh_token', $this->refreshToken, now()->addDays(30));
-                }
+        try {
+            // Verificar se tabela existe antes de consultar
+            if (!Schema::hasTable('integrations')) {
+                // Fallback para cache durante migrations
+                $this->accessToken = Cache::get('bling_access_token');
+                $this->refreshToken = Cache::get('bling_refresh_token');
+                return;
             }
-        } else {
-            // Fallback para cache (retrocompatibilidade)
+            
+            // Tentar carregar do banco primeiro
+            $integration = Integration::where('service', 'bling')->first();
+            
+            if ($integration && $integration->is_active) {
+                $this->accessToken = $integration->access_token;
+                $this->refreshToken = $integration->refresh_token;
+                
+                Log::debug('Tokens carregados do banco de dados', [
+                    'has_access_token' => !empty($this->accessToken),
+                    'has_refresh_token' => !empty($this->refreshToken),
+                    'expires_at' => $integration->token_expires_at?->format('Y-m-d H:i:s'),
+                    'is_expired' => $integration->token_expires_at ? $integration->token_expires_at->isPast() : null
+                ]);
+                
+                // Manter cache sincronizado para performance
+                if ($this->accessToken && $integration->token_expires_at) {
+                    $expiresIn = $integration->token_expires_at->diffInSeconds(now());
+                    if ($expiresIn > 0) {
+                        Cache::put('bling_access_token', $this->accessToken, $expiresIn);
+                        Cache::put('bling_refresh_token', $this->refreshToken, now()->addDays(30));
+                    }
+                }
+            } else {
+                // Fallback para cache (retrocompatibilidade)
+                Log::warning('Nenhuma integração ativa encontrada no banco, usando cache');
+                $this->accessToken = Cache::get('bling_access_token');
+                $this->refreshToken = Cache::get('bling_refresh_token');
+            }
+        } catch (\Exception $e) {
+            // Se houver qualquer erro de DB, usar cache
+            Log::warning('Erro ao carregar tokens do banco, usando cache', [
+                'error' => $e->getMessage()
+            ]);
             $this->accessToken = Cache::get('bling_access_token');
             $this->refreshToken = Cache::get('bling_refresh_token');
         }
@@ -161,10 +185,17 @@ class BlingV3Adapter implements ERPInterface
     }
 
     /**
-     * Fazer requisição autenticada
+     * Fazer requisição autenticada com rate limiting
+     * 
+     * Limites do Bling:
+     * - 3 requisições por segundo
+     * - 120.000 requisições por dia
      */
     protected function request(string $method, string $endpoint, array $options = []): array
     {
+        // Rate limiting: máximo 3 requisições por segundo
+        $this->enforceRateLimit();
+        
         try {
             // Garantir que headers seja um array
             if (!isset($options['headers'])) {
@@ -193,21 +224,104 @@ class BlingV3Adapter implements ERPInterface
             ];
         } catch (GuzzleException $e) {
             $errorBody = null;
+            $responseBody = null;
+            $statusCode = null;
+            
             if (method_exists($e, 'getResponse') && $e->getResponse()) {
-                $errorBody = json_decode($e->getResponse()->getBody()->getContents(), true);
+                $statusCode = $e->getResponse()->getStatusCode();
+                $responseBody = $e->getResponse()->getBody()->getContents();
+                $errorBody = json_decode($responseBody, true);
+                
+                // IMPORTANTE: Mesmo com erro, o Bling pode ter criado o pedido
+                // ou o pedido pode já existir. Verificar se há ID na resposta
+                if (isset($errorBody['data']['data']['id'])) {
+                    Log::warning('Bling retornou erro mas pedido foi criado/encontrado', [
+                        'error' => $e->getMessage(),
+                        'bling_order_id' => $errorBody['data']['data']['id'],
+                        'error_body' => $errorBody
+                    ]);
+                }
+                
+                // Verificar se o erro é "informações idênticas" - significa que o pedido já existe
+                if (isset($errorBody['error']['fields'])) {
+                    foreach ($errorBody['error']['fields'] as $field) {
+                        if (isset($field['code']) && $field['code'] == 3) {
+                            Log::warning('Bling: Pedido já existe (informações idênticas)', [
+                                'error' => $field['msg'] ?? 'Pedido duplicado',
+                                'endpoint' => $endpoint
+                            ]);
+                        }
+                    }
+                }
+                
+                // Tratar erro 429 (Too Many Requests) - rate limit atingido
+                if ($statusCode === 429) {
+                    Log::warning('Bling rate limit atingido (429 Too Many Requests)', [
+                        'endpoint' => $endpoint,
+                        'message' => 'Aguardando 1 segundo antes de retornar erro...'
+                    ]);
+                    
+                    // Aguardar 1 segundo antes de retornar erro
+                    sleep(1);
+                }
             }
             
             Log::error("Bling API Error [{$method} {$endpoint}]", [
                 'message' => $e->getMessage(),
-                'error_body' => $errorBody
+                'error_body' => $errorBody,
+                'response_body' => $responseBody
             ]);
             
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
                 'error_details' => $errorBody,
+                'data' => $errorBody['data'] ?? null, // Incluir data mesmo em erro para capturar ID
             ];
         }
+    }
+
+    /**
+     * Enforce rate limiting: máximo 3 requisições por segundo
+     * 
+     * Usa cache para rastrear requisições recentes e aguarda se necessário
+     * 
+     * Limites do Bling:
+     * - 3 requisições por segundo
+     * - 120.000 requisições por dia
+     */
+    protected function enforceRateLimit(): void
+    {
+        $cacheKey = 'bling_rate_limit_requests';
+        $now = microtime(true);
+        
+        // Obter requisições dos últimos segundos
+        $requests = Cache::get($cacheKey, []);
+        
+        // Filtrar apenas requisições do último segundo
+        $recentRequests = array_filter($requests, function($timestamp) use ($now) {
+            return ($now - $timestamp) < 1.0;
+        });
+        
+        // Se já temos 3 requisições no último segundo, aguardar
+        if (count($recentRequests) >= 3) {
+            $oldestRequest = min($recentRequests);
+            $waitTime = 1.0 - ($now - $oldestRequest) + 0.1; // +0.1s de margem de segurança
+            
+            if ($waitTime > 0 && $waitTime < 2.0) { // Não aguardar mais de 2 segundos
+                Log::debug('Bling rate limit: aguardando antes de fazer requisição', [
+                    'wait_seconds' => round($waitTime, 3),
+                    'recent_requests' => count($recentRequests)
+                ]);
+                usleep((int)($waitTime * 1000000)); // Converter para microsegundos
+            }
+        }
+        
+        // Registrar esta requisição
+        $requests[] = $now;
+        // Manter apenas últimas 10 requisições (otimização de memória)
+        $requests = array_slice($requests, -10);
+        Cache::put($cacheKey, $requests, 5); // Cache por 5 segundos
     }
 
     /**
@@ -326,8 +440,178 @@ class BlingV3Adapter implements ERPInterface
             'result' => $result
         ]);
 
+        // Verificar se o erro é de duplicação (pedido já existe)
+        $isDuplicateError = false;
+        if (!$result['success'] && isset($result['error_details']['error']['fields'])) {
+            foreach ($result['error_details']['error']['fields'] as $field) {
+                if (isset($field['code']) && $field['code'] == 3) {
+                    $isDuplicateError = true;
+                    Log::warning('Bling: Pedido duplicado detectado', [
+                        'order_number' => $orderData['order_number'] ?? 'N/A',
+                        'error_msg' => $field['msg'] ?? 'Pedido duplicado'
+                    ]);
+                    break;
+                }
+            }
+        }
+        
         // Bling retorna o ID do pedido em data.data.id
-        return isset($result['data']['data']['id']) ? (string) $result['data']['data']['id'] : null;
+        // IMPORTANTE: Mesmo se houver erro de validação (ex: status inválido),
+        // o Bling pode criar o pedido e retornar o ID na resposta
+        $orderId = null;
+        
+        // Tentar extrair ID de várias formas possíveis
+        if (isset($result['data']['data']['id'])) {
+            $orderId = (string) $result['data']['data']['id'];
+            Log::info('Bling pedido criado - ID extraído de data.data.id', ['bling_order_id' => $orderId]);
+        } elseif (isset($result['error_details']['data']['data']['id'])) {
+            // Às vezes o ID vem dentro de error_details mesmo com erro
+            $orderId = (string) $result['error_details']['data']['data']['id'];
+            Log::info('Bling pedido criado - ID extraído de error_details.data.data.id', ['bling_order_id' => $orderId]);
+        } elseif (isset($result['error_details']['error']['id'])) {
+            $orderId = (string) $result['error_details']['error']['id'];
+            Log::info('Bling pedido criado - ID extraído de error_details.error.id', ['bling_order_id' => $orderId]);
+        }
+        
+        // Se é erro de duplicação e não conseguimos extrair o ID, lançar exceção especial
+        if ($isDuplicateError && !$orderId) {
+            throw new \App\Exceptions\BlingDuplicateOrderException(
+                'Pedido já existe no Bling (duplicado)',
+                $orderData['order_number'] ?? 'N/A'
+            );
+        }
+        
+        if (!$orderId) {
+            Log::warning('Bling não retornou ID do pedido', [
+                'success' => $result['success'] ?? false,
+                'has_data' => isset($result['data']),
+                'has_error_details' => isset($result['error_details']),
+                'is_duplicate' => $isDuplicateError,
+                'result_keys' => array_keys($result)
+            ]);
+        }
+        
+        return $orderId;
+    }
+
+    /**
+     * Atualizar pedido no Bling (PUT - requer todos os campos)
+     * 
+     * @param string $erpOrderId ID do pedido no Bling
+     * @param array $orderData Dados completos do pedido (PUT substitui todos os campos)
+     * @return bool Sucesso da operação
+     */
+    public function updateOrder(string $erpOrderId, array $orderData): bool
+    {
+        $blingData = $this->denormalizeOrder($orderData);
+        
+        $result = $this->request('PUT', "pedidos/vendas/{$erpOrderId}", [
+            'json' => $blingData,
+        ]);
+
+        Log::info('Bling updateOrder result', [
+            'order_id' => $erpOrderId,
+            'success' => $result['success'] ?? false,
+            'result' => $result
+        ]);
+
+        // Verificar se há warnings na resposta (o Bling pode retornar success mas com warnings)
+        if (isset($result['data']['data']['warnings']) && !empty($result['data']['data']['warnings'])) {
+            Log::warning('Bling retornou warnings na atualização do pedido', [
+                'order_id' => $erpOrderId,
+                'warnings' => $result['data']['data']['warnings']
+            ]);
+        }
+
+        // Se um status ID específico foi fornecido, tentar atualizar via endpoint específico
+        if (isset($orderData['bling_status_id'])) {
+            $statusUpdateResult = $this->updateOrderStatus($erpOrderId, $orderData['bling_status_id']);
+            if ($statusUpdateResult) {
+                Log::info('Status do pedido atualizado via endpoint específico', [
+                    'order_id' => $erpOrderId,
+                    'status_id' => $orderData['bling_status_id']
+                ]);
+            }
+        }
+
+        return $result['success'] ?? false;
+    }
+
+    /**
+     * Atualizar apenas a situação (status) de um pedido no Bling
+     * 
+     * Endpoint: PATCH /pedidos/vendas/{idPedidoVenda}/situacoes/{idSituacao}
+     * 
+     * @param string $erpOrderId ID do pedido no Bling
+     * @param int $statusId ID da situação no Bling
+     * @return bool Sucesso da operação
+     */
+    public function updateOrderStatus(string $erpOrderId, int $statusId): bool
+    {
+        // Usar PATCH conforme documentação oficial da API v3 do Bling
+        $result = $this->request('PATCH', "pedidos/vendas/{$erpOrderId}/situacoes/{$statusId}", [
+            'json' => [], // Body vazio conforme documentação
+        ]);
+
+        Log::info('Bling updateOrderStatus result', [
+            'order_id' => $erpOrderId,
+            'status_id' => $statusId,
+            'success' => $result['success'] ?? false,
+            'result' => $result
+        ]);
+
+        // Verificar se o erro é porque o pedido já possui a mesma situação (code 50)
+        // Isso deve ser tratado como sucesso, pois significa que o status já está correto
+        if (!$result['success'] && isset($result['error_details']['error']['fields'])) {
+            foreach ($result['error_details']['error']['fields'] as $field) {
+                if (isset($field['code']) && $field['code'] == 50) {
+                    Log::info('Bling: Pedido já possui a situação desejada (code 50)', [
+                        'order_id' => $erpOrderId,
+                        'status_id' => $statusId,
+                        'message' => $field['msg'] ?? 'A venda possui a mesma situação'
+                    ]);
+                    return true; // Tratar como sucesso
+                }
+            }
+        }
+
+        // Verificar se o status foi realmente atualizado
+        if ($result['success']) {
+            try {
+                // Aguardar um pouco para o Bling processar
+                sleep(1);
+                
+                // Buscar pedido do Bling para verificar se o status foi atualizado
+                $getResult = $this->request('GET', "pedidos/vendas/{$erpOrderId}");
+                if ($getResult['success'] && isset($getResult['data']['data'])) {
+                    $updatedOrder = $getResult['data']['data'];
+                    if (isset($updatedOrder['situacao'])) {
+                        $newStatusId = $updatedOrder['situacao']['id'] ?? null;
+                        
+                        if ($newStatusId == $statusId) {
+                            Log::info('Bling confirmou atualização do status via endpoint específico', [
+                                'order_id' => $erpOrderId,
+                                'status_id' => $newStatusId
+                            ]);
+                            return true;
+                        } else {
+                            Log::warning('Bling não atualizou o status do pedido via endpoint específico', [
+                                'order_id' => $erpOrderId,
+                                'expected_status_id' => $statusId,
+                                'actual_status_id' => $newStatusId
+                            ]);
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::warning('Não foi possível verificar se o status foi atualizado', [
+                    'order_id' => $erpOrderId,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        return $result['success'] ?? false;
     }
 
     /**
@@ -348,16 +632,11 @@ class BlingV3Adapter implements ERPInterface
 
     /**
      * {@inheritDoc}
+     * Get status modules (deprecated - use getModules())
      */
     public function getStatuses(): array
     {
-        $result = $this->request('GET', 'situacoes/modulos');
-        
-        if (!$result['success']) {
-            return [];
-        }
-
-        return $result['data']['data'] ?? [];
+        return $this->getModules();
     }
 
     /**
@@ -504,8 +783,43 @@ class BlingV3Adapter implements ERPInterface
     {
         $now = now()->format('Y-m-d');
         
+        // Determinar forma de pagamento no Bling baseado no método usado
+        $paymentMethod = $orderData['payment_method'] ?? 'pix';
+        $paymentMethodMap = [
+            'pix' => config('services.bling.payment_methods.pix'),
+            'credit_card' => config('services.bling.payment_methods.credit_card'),
+            'debit_card' => config('services.bling.payment_methods.debit_card'),
+            'boleto' => config('services.bling.payment_methods.boleto'),
+        ];
+        $paymentMethodId = $paymentMethodMap[$paymentMethod] ?? config('services.bling.payment_methods.default', 6061520);
+        
+        // Calcular valor total das parcelas
+        $itemsTotal = array_sum(array_map(function($item) {
+            return $item['price'] * $item['quantity'];
+        }, $orderData['items']));
+        
+        $totalAmount = $itemsTotal + ($orderData['shipping'] ?? 0) - ($orderData['discount'] ?? 0);
+        
+        // Determinar número de parcelas
+        $installments = $orderData['installments'] ?? 1;
+        $installmentValue = $installments > 0 ? $totalAmount / $installments : $totalAmount;
+        
+        // Criar parcelas
+        $parcelas = [];
+        for ($i = 1; $i <= $installments; $i++) {
+            $parcelas[] = [
+                'dataVencimento' => now()->addDays($i * 30)->format('Y-m-d'), // Vencimento a cada 30 dias
+                'valor' => $installmentValue,
+                'observacoes' => "Parcela {$i}/{$installments} - Pagamento via " . strtoupper($paymentMethod),
+                'formaPagamento' => [
+                    'id' => $paymentMethodId
+                ]
+            ];
+        }
+        
         $payload = [
             'numero' => $orderData['order_number'] ?? '', // Número do pedido na loja
+            'numeroPedidoCompra' => $orderData['order_number'] ?? '', // Número único para evitar duplicação
             'data' => $now, // Data do pedido (obrigatório)
             'dataSaida' => $now, // Data de saída (obrigatório)
             'dataPrevista' => $now, // Data prevista (obrigatório)
@@ -526,28 +840,87 @@ class BlingV3Adapter implements ERPInterface
                 
                 return $itemData;
             }, $orderData['items']),
-            'parcelas' => [
-                [
-                    'dataVencimento' => now()->addDays(1)->format('Y-m-d'), // Vencimento em 1 dia
-                    'valor' => ($orderData['shipping'] + array_sum(array_map(function($item) {
-                        return $item['price'] * $item['quantity'];
-                    }, $orderData['items']))) - ($orderData['discount'] ?? 0),
-                    'observacoes' => 'Pagamento via ' . ($orderData['payment_method'] ?? 'PIX'),
-                    'formaPagamento' => [
-                        'id' => config('services.bling.payment_method_id', 6061520) // ID da forma de pagamento no Bling (Dinheiro)
-                    ]
-                ]
-            ],
+            'parcelas' => $parcelas,
             'transporte' => [
                 'frete' => $orderData['shipping'] ?? 0,
             ],
         ];
-
+        
+        // Adicionar transportadora no transporte
+        // NOTA: O endereço de entrega NÃO vai aqui - ele já está no contato do pedido
+        // Apenas a transportadora e informações de frete vão no transporte
+        if (!empty($orderData['shipping_carrier'])) {
+            // A transportadora deve ser o nome exato cadastrado no Bling
+            // Ex: "Correios", "Jadlog", etc.
+            $payload['transporte']['transportadora'] = $orderData['shipping_carrier'];
+        }
+        
+        // Adicionar método de envio nas observações se disponível
+        if (!empty($orderData['shipping_method_name'])) {
+            if (!isset($payload['transporte']['observacoes'])) {
+                $payload['transporte']['observacoes'] = '';
+            }
+            $payload['transporte']['observacoes'] .= ($payload['transporte']['observacoes'] ? ' | ' : '') . 
+                'Método: ' . $orderData['shipping_method_name'];
+        }
+        
+        // Adicionar situação (status) do pedido
+        $statusId = null;
+        
+        // Se um status ID específico foi fornecido (ex: para atualização via PUT), usar ele
+        if (isset($orderData['bling_status_id'])) {
+            $statusId = (int) $orderData['bling_status_id'];
+            Log::info('Bling: Usando status ID específico fornecido', ['status_id' => $statusId]);
+        } else {
+            // Verificar se pedido foi pago (paid_at não nulo) OU status é processing
+            // paid_at pode ser DateTime, string ou null
+            $paidAt = $orderData['paid_at'] ?? null;
+            $hasPaidAt = $paidAt !== null && $paidAt !== '';
+            $isProcessing = ($orderData['status'] ?? '') === 'processing';
+            $isPaid = $hasPaidAt || $isProcessing;
+            
+            Log::info('Bling denormalizeOrder - Determinando status', [
+                'order_number' => $orderData['order_number'] ?? 'N/A',
+                'status' => $orderData['status'] ?? 'N/A',
+                'paid_at' => $paidAt ? (is_object($paidAt) ? $paidAt->format('Y-m-d H:i:s') : $paidAt) : 'null',
+                'has_paid_at' => $hasPaidAt,
+                'is_processing' => $isProcessing,
+                'is_paid' => $isPaid,
+                'processing_id' => config('services.bling.order_statuses.processing', 15),
+                'open_id' => config('services.bling.order_statuses.open', 6),
+            ]);
+            
+            if ($isPaid) {
+                // Pedido pago - enviar como "Em andamento" (ID 15)
+                $statusId = config('services.bling.order_statuses.processing', 15);
+                Log::info('Bling: Enviando pedido com status "Em andamento" (ID ' . $statusId . ')');
+            } else {
+                // IMPORTANTE: O Bling não permite criar pedidos com status diferente de "Em aberto" (ID 6)
+                // Por isso, vamos criar sempre como "Em aberto" e atualizar depois via PUT se necessário
+                $statusId = config('services.bling.order_statuses.open', 6);
+                Log::info('Bling: Criando pedido sempre como "Em aberto" (ID ' . $statusId . ')', [
+                    'is_paid' => $isPaid,
+                    'note' => 'Status será atualizado via PUT após criação se pedido estiver pago'
+                ]);
+            }
+        }
+        
+        if ($statusId !== null) {
+            $payload['situacao'] = ['id' => (int) $statusId];
+        }
+        
         // Adicionar desconto se houver
         if (!empty($orderData['discount']) && $orderData['discount'] > 0) {
             $payload['desconto'] = [
                 'valor' => $orderData['discount']
             ];
+        }
+        
+        // Adicionar taxas do gateway de pagamento (ex: Mercado Pago)
+        // Isso será registrado como despesa no Bling
+        if (!empty($orderData['payment_fee']) && $orderData['payment_fee'] > 0) {
+            $payload['observacoes'] = "Taxa de pagamento: R$ " . number_format($orderData['payment_fee'], 2, ',', '.') . 
+                                    " | Valor líquido: R$ " . number_format($orderData['net_amount'] ?? $totalAmount, 2, ',', '.');
         }
 
         // Se o cliente tem ID no Bling, usar o ID. Senão, enviar dados completos
@@ -564,5 +937,169 @@ class BlingV3Adapter implements ERPInterface
         }
 
         return $payload;
+    }
+
+    /**
+     * Obter lista de módulos do Bling
+     * 
+     * @return array Lista de módulos disponíveis
+     */
+    public function getModules(): array
+    {
+        try {
+            Log::info('BlingV3Adapter - Buscando módulos');
+            
+            $result = $this->request('GET', '/situacoes/modulos');
+            
+            if (!$result['success']) {
+                Log::error('Erro ao obter módulos do Bling', [
+                    'error' => $result['error'] ?? 'Unknown error'
+                ]);
+                return [];
+            }
+            
+            $modules = $result['data']['data'] ?? [];
+            
+            Log::info('Módulos do Bling obtidos com sucesso', [
+                'count' => count($modules),
+                'modules' => $modules
+            ]);
+            
+            return $modules;
+
+        } catch (GuzzleException $e) {
+            Log::error('Erro ao buscar módulos do Bling', [
+                'error' => $e->getMessage(),
+                'code' => $e->getCode()
+            ]);
+            return [];
+        }
+    }
+
+    /**
+     * Obter lista de situações (status) de um módulo específico
+     * 
+     * @param int $moduleId ID do módulo
+     * @return array Lista de situações
+     */
+    public function getSituations(int $moduleId): array
+    {
+        try {
+            Log::info('BlingV3Adapter - Buscando situações', [
+                'module_id' => $moduleId
+            ]);
+            
+            // O endpoint correto é /situacoes/modulos/{idModuloSistema}
+            $result = $this->request('GET', "/situacoes/modulos/{$moduleId}");
+            
+            if (!$result['success']) {
+                Log::error('Erro ao obter situações do Bling', [
+                    'module_id' => $moduleId,
+                    'error' => $result['error'] ?? 'Unknown error',
+                    'error_details' => $result['error_details'] ?? null
+                ]);
+                return [];
+            }
+            
+            $statuses = $result['data']['data'] ?? [];
+            
+            Log::info('Situações do Bling obtidas com sucesso', [
+                'module_id' => $moduleId,
+                'count' => count($statuses),
+                'statuses' => $statuses
+            ]);
+            
+            return $statuses;
+
+        } catch (GuzzleException $e) {
+            Log::error('Erro ao buscar situações do Bling', [
+                'module_id' => $moduleId,
+                'error' => $e->getMessage(),
+                'code' => $e->getCode()
+            ]);
+            return [];
+        }
+    }
+
+    /**
+     * Obter detalhes de um pedido de venda específico pelo ID
+     * 
+     * @param string $orderId ID do pedido no Bling
+     * @return array|null Dados do pedido ou null se não encontrado
+     */
+    public function getOrderById(string $orderId): ?array
+    {
+        try {
+            Log::info('BlingV3Adapter - Buscando pedido', ['order_id' => $orderId]);
+            
+            $result = $this->request('GET', "/pedidos/vendas/{$orderId}");
+            
+            if (!$result['success']) {
+                // Se erro 404, retornar null (pedido não encontrado)
+                if (str_contains($result['error'] ?? '', '404')) {
+                    Log::warning('Pedido não encontrado no Bling', ['order_id' => $orderId]);
+                    return null;
+                }
+                
+                Log::error('Erro ao buscar pedido do Bling', [
+                    'order_id' => $orderId,
+                    'error' => $result['error'] ?? 'Unknown error'
+                ]);
+                return null;
+            }
+            
+            $orderData = $result['data']['data'] ?? null;
+            
+            Log::debug('Pedido do Bling obtido', [
+                'order_id' => $orderId,
+                'status' => $orderData['situacao'] ?? 'N/A'
+            ]);
+
+            return $orderData;
+
+        } catch (GuzzleException $e) {
+            if ($e->getCode() === 404) {
+                Log::warning('Pedido não encontrado no Bling', ['order_id' => $orderId]);
+                return null;
+            }
+
+            Log::error('Erro ao buscar pedido do Bling', [
+                'order_id' => $orderId,
+                'error' => $e->getMessage(),
+                'code' => $e->getCode()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Obter lista de pedidos de venda
+     * 
+     * @param array $filters Filtros opcionais (dataInicial, dataFinal, situacao, etc)
+     * @return array Lista de pedidos
+     */
+    public function getOrders(array $filters = []): array
+    {
+        // Usar o método request() para garantir autenticação correta
+        $result = $this->request('GET', 'pedidos/vendas', [
+            'query' => $filters,
+        ]);
+
+        if (!$result['success']) {
+            Log::error('Erro ao buscar lista de pedidos do Bling', [
+                'filters' => $filters,
+                'error' => $result['error'] ?? 'unknown'
+            ]);
+            throw new \RuntimeException('Falha ao buscar lista de pedidos do Bling: ' . ($result['error'] ?? 'unknown'));
+        }
+
+        $orders = $result['data']['data'] ?? [];
+        
+        Log::debug('Lista de pedidos do Bling obtida', [
+            'filters' => $filters,
+            'count' => count($orders)
+        ]);
+
+        return $orders;
     }
 }

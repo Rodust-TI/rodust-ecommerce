@@ -45,6 +45,28 @@ return [
         
         // Redirect para OAuth (configure no painel Bling)
         'redirect_uri' => env('BLING_REDIRECT_URI', env('APP_URL') . '/bling/callback'),
+        
+        // Formas de pagamento (IDs do Bling)
+        // Use o comando: php artisan bling:list-payment-methods
+        'payment_methods' => [
+            'pix' => env('BLING_PAYMENT_METHOD_PIX'),
+            'credit_card' => env('BLING_PAYMENT_METHOD_CREDIT_CARD'),
+            'debit_card' => env('BLING_PAYMENT_METHOD_DEBIT_CARD'),
+            'boleto' => env('BLING_PAYMENT_METHOD_BOLETO'),
+            'default' => env('BLING_PAYMENT_METHOD_DEFAULT', 6061520), // Padrão caso não encontre
+        ],
+        
+        // Situações (Status) de pedidos (IDs do Bling)
+        // Use o comando: php artisan bling:test-statuses para verificar IDs corretos
+        // IDs padrão baseados na API do Bling (podem ser sobrescritos via .env)
+        'order_statuses' => [
+            'open' => env('BLING_ORDER_STATUS_OPEN', 6), // Em aberto
+            'processing' => env('BLING_ORDER_STATUS_PROCESSING', 15), // Em andamento
+            'shipped' => env('BLING_ORDER_STATUS_SHIPPED'), // Enviado (se existir)
+            'completed' => env('BLING_ORDER_STATUS_COMPLETED'), // Concluído (se existir)
+            'cancelled' => env('BLING_ORDER_STATUS_CANCELLED', 12), // Cancelado
+            'attended' => env('BLING_ORDER_STATUS_ATTENDED', 9), // Atendido
+        ],
     ],
 
     'melhor_envio' => [
@@ -69,6 +91,7 @@ return [
 
     'wordpress' => [
         'url' => env('WORDPRESS_URL', 'https://rodust.com.br'),
+        'sync_url' => env('WORDPRESS_SYNC_URL', env('WORDPRESS_URL', 'https://rodust.com.br')),
         'api_user' => env('WORDPRESS_API_USER'),
         'api_password' => env('WORDPRESS_API_PASSWORD'), // Application Password do WordPress
     ],
@@ -88,6 +111,12 @@ return [
         // Webhook
         'webhook_url' => env('MERCADOPAGO_WEBHOOK_URL'),
         'webhook_secret' => env('MERCADOPAGO_WEBHOOK_SECRET'),
+    ],
+
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URL'),
     ],
 
 ];
