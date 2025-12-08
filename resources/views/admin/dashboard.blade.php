@@ -187,14 +187,6 @@
             <div class="space-y-2">
                 @forelse($recentOrders as $order)
                     @php
-                        $statusInfo = [
-                            'pending' => ['color' => 'yellow', 'icon' => '⏳'],
-                            'processing' => ['color' => 'blue', 'icon' => '⚙️'],
-                            'invoiced' => ['color' => 'purple', 'icon' => '📄'],
-                            'shipped' => ['color' => 'indigo', 'icon' => '🚚'],
-                            'delivered' => ['color' => 'green', 'icon' => '✅'],
-                            'cancelled' => ['color' => 'red', 'icon' => '❌'],
-                        ];
                         // Usar enum para obter label e ícone corretos
                         $statusEnum = \App\Enums\OrderStatus::fromString($order->status);
                         if ($statusEnum) {
