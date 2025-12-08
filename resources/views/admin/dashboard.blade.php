@@ -195,7 +195,17 @@
                             'delivered' => ['color' => 'green', 'icon' => '✅'],
                             'cancelled' => ['color' => 'red', 'icon' => '❌'],
                         ];
-                        $status = $statusInfo[$order->status] ?? ['color' => 'gray', 'icon' => '❓'];
+                        // Usar enum para obter label e ícone corretos
+                        $statusEnum = \App\Enums\OrderStatus::fromString($order->status);
+                        if ($statusEnum) {
+                            $statusColor = $statusEnum->color();
+                            $statusLabel = $statusEnum->label();
+                            $statusIcon = $statusEnum->icon();
+                        } else {
+                            $statusColor = 'gray';
+                            $statusLabel = ucfirst($order->status);
+                            $statusIcon = '❓';
+                        }
                     @endphp
                     <div class="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg">
                         <div class="flex-1 min-w-0">

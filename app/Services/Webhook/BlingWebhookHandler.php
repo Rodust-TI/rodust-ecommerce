@@ -259,18 +259,26 @@ class BlingWebhookHandler
     protected function handleOrder(array $data, string $action, WebhookLog $webhookLog): void
     {
         $orderData = $data['data'] ?? [];
-        $blingOrderNumber = $orderData['numero'] ?? $orderData['id'] ?? null;
+        $blingOrderId = $orderData['id'] ?? null; // ID do pedido no Bling (ex: 24525012441)
+        $blingOrderNumber = $orderData['numero'] ?? null; // Número do pedido no Bling (ex: 4)
 
-        if (!$blingOrderNumber) {
-            Log::warning('Order webhook without Bling order number', ['webhook_log_id' => $webhookLog->id]);
+        if (!$blingOrderId && !$blingOrderNumber) {
+            Log::warning('Order webhook without Bling order ID or number', ['webhook_log_id' => $webhookLog->id]);
             return;
         }
 
-        // Buscar pedido local pelo número do Bling
-        $order = Order::where('bling_order_number', (string) $blingOrderNumber)->first();
+        // Buscar pedido local - tentar primeiro pelo ID do Bling, depois pelo número
+        $order = null;
+        if ($blingOrderId) {
+            $order = Order::where('bling_order_number', (string) $blingOrderId)->first();
+        }
+        if (!$order && $blingOrderNumber) {
+            $order = Order::where('bling_order_number', (string) $blingOrderNumber)->first();
+        }
 
         if (!$order) {
             Log::warning('Order not found in local database', [
+                'bling_order_id' => $blingOrderId,
                 'bling_order_number' => $blingOrderNumber,
                 'webhook_log_id' => $webhookLog->id
             ]);
@@ -281,32 +289,43 @@ class BlingWebhookHandler
         $blingStatus = $orderData['situacao'] ?? null;
 
         // Se o webhook não contém o status, buscar o pedido completo do Bling
+        // Usar o ID do Bling (preferencial) ou o número do pedido
+        $blingOrderIdentifier = $blingOrderId ?? $blingOrderNumber;
+        
         if (!$blingStatus) {
             Log::info('Webhook não contém status, buscando pedido completo do Bling', [
+                'bling_order_id' => $blingOrderId,
                 'bling_order_number' => $blingOrderNumber,
+                'using_identifier' => $blingOrderIdentifier,
                 'webhook_log_id' => $webhookLog->id
             ]);
             
             try {
                 $blingOrderService = app(\App\Services\Bling\BlingOrderService::class);
-                $blingOrderFull = $blingOrderService->getOrder($blingOrderNumber);
+                $blingOrderFull = $blingOrderService->getOrder((string) $blingOrderIdentifier);
                 
                 if ($blingOrderFull && isset($blingOrderFull['situacao'])) {
                     $blingStatus = $blingOrderFull['situacao'];
                     Log::info('Status obtido do pedido completo do Bling', [
+                        'bling_order_id' => $blingOrderId,
                         'bling_order_number' => $blingOrderNumber,
+                        'using_identifier' => $blingOrderIdentifier,
                         'status_id' => $blingStatus['id'] ?? null,
                         'webhook_log_id' => $webhookLog->id
                     ]);
                 } else {
                     Log::warning('Pedido completo do Bling também não contém status', [
+                        'bling_order_id' => $blingOrderId,
                         'bling_order_number' => $blingOrderNumber,
+                        'using_identifier' => $blingOrderIdentifier,
                         'webhook_log_id' => $webhookLog->id
                     ]);
                 }
             } catch (\Exception $e) {
                 Log::error('Erro ao buscar pedido completo do Bling', [
+                    'bling_order_id' => $blingOrderId,
                     'bling_order_number' => $blingOrderNumber,
+                    'using_identifier' => $blingOrderIdentifier,
                     'error' => $e->getMessage(),
                     'webhook_log_id' => $webhookLog->id
                 ]);
@@ -328,6 +347,7 @@ class BlingWebhookHandler
             Log::info("Order status updated from Bling webhook", [
                 'order_id' => $order->id,
                 'order_number' => $order->order_number,
+                'bling_order_id' => $blingOrderId,
                 'bling_order_number' => $blingOrderNumber,
                 'bling_status_id' => $blingStatusId,
                 'bling_status_name' => $blingStatusName,

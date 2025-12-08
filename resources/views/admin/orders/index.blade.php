@@ -96,15 +96,11 @@
                     <tbody class="divide-y divide-gray-700">
                         @foreach($orders as $order)
                             @php
-                                $statusInfo = [
-                                    'pending' => ['color' => 'yellow', 'icon' => '⏳'],
-                                    'processing' => ['color' => 'blue', 'icon' => '⚙️'],
-                                    'invoiced' => ['color' => 'purple', 'icon' => '📄'],
-                                    'shipped' => ['color' => 'indigo', 'icon' => '🚚'],
-                                    'delivered' => ['color' => 'green', 'icon' => '✅'],
-                                    'cancelled' => ['color' => 'red', 'icon' => '❌'],
-                                ];
-                                $status = $statusInfo[$order->status] ?? ['color' => 'gray', 'icon' => '❓'];
+                                // Usar enum para obter label e ícone corretos
+                                $statusEnum = \App\Enums\OrderStatus::fromString($order->status);
+                                $statusColor = $statusEnum ? $statusEnum->color() : 'gray';
+                                $statusLabel = $statusEnum ? $statusEnum->label() : ucfirst($order->status);
+                                $statusIcon = $statusEnum ? $statusEnum->icon() : '❓';
                                 $paymentStatusInfo = [
                                     'pending' => ['color' => 'yellow', 'icon' => '⏳'],
                                     'approved' => ['color' => 'green', 'icon' => '✅'],

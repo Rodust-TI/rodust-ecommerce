@@ -27,7 +27,7 @@ enum OrderStatus: string
             self::PROCESSING => 'Em Processamento',
             self::INVOICED => 'Faturado',
             self::SHIPPED => 'Enviado',
-            self::DELIVERED => 'Concluído', // Atendido/Entregue = Pedido concluído
+            self::DELIVERED => 'Concluído',
             self::CANCELLED => 'Cancelado',
         };
     }
